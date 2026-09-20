@@ -93,17 +93,17 @@ export async function getOrganizationWalletOverview() {
   };
 }
 
-// returnPath is parameterized (unlike wallet.ts's createConnectOnboardingLink,
-// which hardcodes /dashboard/wallet) so both the org creation wizard and the
-// /organizer/payments page can reuse this with different return destinations.
-export async function createOrganizationConnectOnboardingLink(
-  returnPath: string
-): Promise<{ url?: string; error?: string }> {
+// Powers the embedded Connect onboarding panel (ConnectPayoutOnboarding),
+// rendered inline on /organizer/payments and in the org creation wizard's
+// Step9Payments — instead of redirecting to Stripe's hosted
+// connect.stripe.com onboarding page. Same underlying Express account and
+// KYC requirements as before, just rendered in Playver's own UI. The client
+// calls this every time it needs a fresh client_secret (account sessions
+// expire after ~1 hour), so it's safe to call repeatedly.
+export async function createOrganizationConnectAccountSession(): Promise<{ clientSecret?: string; error?: string }> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return { error: "Unauthorized" };
   const { organization } = await requireOrganizationPermission("MANAGE_PAYMENTS");
-
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
 
   const orgRow = await pool.query(`SELECT "stripeConnectAccountId" FROM "organization" WHERE id = $1`, [organization.id]);
   let accountId = orgRow.rows[0]?.stripeConnectAccountId as string | null;
@@ -118,14 +118,12 @@ export async function createOrganizationConnectOnboardingLink(
     await pool.query(`UPDATE "organization" SET "stripeConnectAccountId" = $1 WHERE id = $2`, [accountId, organization.id]);
   }
 
-  const accountLink = await stripe.accountLinks.create({
+  const accountSession = await stripe.accountSessions.create({
     account: accountId,
-    refresh_url: `${baseUrl}${returnPath}`,
-    return_url: `${baseUrl}${returnPath}?connect=return`,
-    type: "account_onboarding",
+    components: { account_onboarding: { enabled: true } },
   });
 
-  return { url: accountLink.url };
+  return { clientSecret: accountSession.client_secret };
 }
 
 function calculateWithdrawalFee(_amountCents: number): number {

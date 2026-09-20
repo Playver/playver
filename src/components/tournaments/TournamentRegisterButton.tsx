@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createTournamentTeam, importExistingTeamForTournament } from "@/app/actions/tournament";
 import type { MyTeamOption } from "@/app/actions/tournament";
+import { formatPrice } from "@/lib/format-price";
 
 type Mode = "new" | "existing";
 
@@ -60,6 +61,14 @@ export default function TournamentRegisterButton({
   }
 
   async function payViaCheckout(teamId: string) {
+    // Confirm before redirecting to Checkout — same gate as
+    // TournamentCaptainPanel's handlePay. Cancelling here just leaves the
+    // team created but unpaid ("pending") — the captain can pay later from
+    // the team panel.
+    if (!confirm(t("payConfirm", { amount: formatPrice(price) }))) {
+      router.refresh(); // team was already created (pending payment) — show it
+      return;
+    }
     setPaymentLoading(true);
     setPaymentError("");
     try {

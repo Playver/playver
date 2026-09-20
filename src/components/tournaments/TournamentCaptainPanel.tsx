@@ -20,6 +20,7 @@ import {
   renameTournamentTeam,
 } from "@/app/actions/tournament";
 import type { TournamentTeam, TournamentJoinRequest } from "@/app/actions/tournament";
+import { formatPrice } from "@/lib/format-price";
 
 function Avatar({ name, image, size = 8 }: { name: string; image?: string | null; size?: number }) {
   const cls = `w-${size} h-${size} rounded-full object-cover`;
@@ -67,6 +68,10 @@ export function TournamentCaptainPanel({
   }
 
   async function handlePay() {
+    // Confirm before redirecting to Checkout — a native confirm() is the
+    // same "are you sure" gate already used for disband/leave in this file,
+    // so this isn't spent silently on click.
+    if (!confirm(t("payConfirm", { amount: formatPrice(price) }))) return;
     setPaymentLoading(true);
     setError("");
     try {

@@ -7,9 +7,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { cancelEvent, postponeEvent } from "@/app/actions/event";
+import { cancelEvent, getEventRefundPreview, postponeEvent } from "@/app/actions/event";
+import { formatPrice } from "@/lib/format-price";
 
-type View = "closed" | "choice" | "cancel-confirm" | "postpone-form";
+type View = "closed" | "choice" | "cancel-confirm" | "cancel-result" | "postpone-form";
+
+type CancelResult = { refundedCount: number; refundedTotalCents: number; pendingReviewCount: number };
 
 export default function EventCancelPostponeButton({
   eventId,
@@ -31,10 +34,22 @@ export default function EventCancelPostponeButton({
   const [error, setError] = useState("");
   const [newStart, setNewStart] = useState(startDateTime.slice(0, 16));
   const [newEnd, setNewEnd] = useState(endDateTime.slice(0, 16));
+  const [refundPreview, setRefundPreview] = useState<{ count: number; totalCents: number } | null>(null);
+  const [cancelResult, setCancelResult] = useState<CancelResult | null>(null);
 
   function close() {
     setView("closed");
     setError("");
+    setRefundPreview(null);
+    setCancelResult(null);
+    router.refresh();
+  }
+
+  async function openCancelConfirm() {
+    setView("cancel-confirm");
+    if (!isPaid) return;
+    const preview = await getEventRefundPreview(eventId);
+    if (!preview.error) setRefundPreview({ count: preview.count ?? 0, totalCents: preview.totalCents ?? 0 });
   }
 
   async function handleCancel() {
@@ -46,8 +61,16 @@ export default function EventCancelPostponeButton({
       setError(result.error);
       return;
     }
-    close();
-    router.refresh();
+    if (isPaid) {
+      setCancelResult({
+        refundedCount: result.refundedCount ?? 0,
+        refundedTotalCents: result.refundedTotalCents ?? 0,
+        pendingReviewCount: result.pendingReviewCount ?? 0,
+      });
+      setView("cancel-result");
+    } else {
+      close();
+    }
   }
 
   async function handlePostpone(e: React.FormEvent) {
@@ -61,7 +84,6 @@ export default function EventCancelPostponeButton({
       return;
     }
     close();
-    router.refresh();
   }
 
   return (
@@ -96,7 +118,7 @@ export default function EventCancelPostponeButton({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setView("cancel-confirm")}
+                    onClick={openCancelConfirm}
                     className="w-full py-2.5 text-sm font-semibold text-white bg-[#e21d12] rounded-lg hover:bg-[#d41810] transition-colors"
                   >
                     {t("cancelOption")}
@@ -120,6 +142,16 @@ export default function EventCancelPostponeButton({
                     {isPaid ? t("cancelConfirmPaidBody", { eventTitle }) : t("cancelConfirmBody", { eventTitle })}
                   </p>
                 </div>
+                {isPaid && refundPreview && refundPreview.count > 0 && (
+                  <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
+                    <p className="text-sm font-semibold text-amber-800">
+                      {t("cancelRefundPreview", {
+                        count: refundPreview.count,
+                        amount: formatPrice(refundPreview.totalCents),
+                      })}
+                    </p>
+                  </div>
+                )}
                 {error && <p className="text-sm font-semibold text-red-600">{error}</p>}
                 <div className="flex gap-3">
                   <button
@@ -139,6 +171,39 @@ export default function EventCancelPostponeButton({
                     {isLoading ? t("cancelling") : t("confirmCancel")}
                   </button>
                 </div>
+              </>
+            )}
+
+            {view === "cancel-result" && cancelResult && (
+              <>
+                <div>
+                  <span className="mb-3 flex size-10 items-center justify-center rounded-full bg-emerald-50">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </span>
+                  <h2 className="text-lg font-extrabold text-zinc-900">{t("cancelResultTitle")}</h2>
+                  <p className="mt-1.5 text-sm text-zinc-500">
+                    {cancelResult.refundedCount > 0
+                      ? t("cancelResultRefunded", {
+                          count: cancelResult.refundedCount,
+                          amount: formatPrice(cancelResult.refundedTotalCents),
+                        })
+                      : t("cancelResultNoPayments")}
+                  </p>
+                  {cancelResult.pendingReviewCount > 0 && (
+                    <p className="mt-2 text-sm font-semibold text-amber-700">
+                      {t("cancelResultPendingReview", { count: cancelResult.pendingReviewCount })}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={close}
+                  className="w-full py-2.5 text-sm font-semibold text-white bg-[#e21d12] rounded-lg hover:bg-[#d41810] transition-colors"
+                >
+                  {t("done")}
+                </button>
               </>
             )}
 

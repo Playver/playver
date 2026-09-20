@@ -62,7 +62,7 @@ export async function getAvailableWalletBalance(userId: string): Promise<number>
 
 export type WalletTransaction = {
   id: string;
-  type: "deposit" | "event_payment_sent" | "event_payment_received" | "withdrawal";
+  type: "deposit" | "event_payment_sent" | "event_payment_received" | "refund_sent" | "refund_received" | "withdrawal";
   amount: number;
   balanceAfter: number;
   createdAt: string;
@@ -104,11 +104,16 @@ export async function getWalletOverview() {
   };
 }
 
-export async function createConnectOnboardingLink(): Promise<{ url?: string; error?: string }> {
+// Powers the embedded Connect onboarding panel (ConnectPayoutOnboarding,
+// rendered inline on /dashboard/wallet) instead of redirecting to Stripe's
+// hosted connect.stripe.com onboarding page — same underlying Express
+// account and KYC requirements, just rendered in Playver's own UI so it
+// never looks or feels like a third-party redirect. The client calls this
+// every time it needs a fresh client_secret (account sessions expire after
+// ~1 hour), so it's safe to call repeatedly.
+export async function createConnectAccountSession(): Promise<{ clientSecret?: string; error?: string }> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return { error: "Unauthorized" };
-
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
 
   const userRow = await pool.query(`SELECT "stripeConnectAccountId" FROM "user" WHERE id = $1`, [session.user.id]);
   let accountId = userRow.rows[0]?.stripeConnectAccountId as string | null;
@@ -123,14 +128,12 @@ export async function createConnectOnboardingLink(): Promise<{ url?: string; err
     await pool.query(`UPDATE "user" SET "stripeConnectAccountId" = $1 WHERE id = $2`, [accountId, session.user.id]);
   }
 
-  const accountLink = await stripe.accountLinks.create({
+  const accountSession = await stripe.accountSessions.create({
     account: accountId,
-    refresh_url: `${baseUrl}/dashboard/wallet`,
-    return_url: `${baseUrl}/dashboard/wallet?connect=return`,
-    type: "account_onboarding",
+    components: { account_onboarding: { enabled: true } },
   });
 
-  return { url: accountLink.url };
+  return { clientSecret: accountSession.client_secret };
 }
 
 function calculateWithdrawalFee(_amountCents: number): number {

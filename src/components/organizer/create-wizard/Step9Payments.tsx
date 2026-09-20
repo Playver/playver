@@ -1,16 +1,18 @@
 "use client";
 
-// Wizard step 9 of 10: Stripe Connect onboarding, optional at this stage
+// Wizard step 9 of 10: payout account onboarding, optional at this stage
 // (the org can publish and connect payments later from /organizer/payments
-// — see OrganizerPaymentsClient.tsx for the same onboarding-link flow).
-import { useEffect, useState } from "react";
+// — see OrganizerPaymentsClient.tsx, which uses the same embedded
+// ConnectPayoutOnboarding component this step does).
+import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { createOrganizationConnectOnboardingLink, getOrganizationWalletOverview } from "@/app/actions/organizer-wallet";
+import { createOrganizationConnectAccountSession, getOrganizationWalletOverview } from "@/app/actions/organizer-wallet";
+import ConnectPayoutOnboarding from "@/components/payments/ConnectPayoutOnboarding";
 import type { StepProps } from "./types";
 
 export default function Step9Payments({ state, update }: StepProps) {
   const t = useTranslations("Organizer");
-  const [connecting, setConnecting] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -21,16 +23,17 @@ export default function Step9Payments({ state, update }: StepProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleConnect() {
-    setConnecting(true);
-    setError("");
-    const result = await createOrganizationConnectOnboardingLink("/organizer/overview");
-    if (result.url) {
-      window.location.href = result.url;
-      return;
-    }
-    setError(result.error ?? t("wizardPaymentsError"));
-    setConnecting(false);
+  const fetchConnectClientSecret = useCallback(async () => {
+    const result = await createOrganizationConnectAccountSession();
+    if (!result.clientSecret) throw new Error(result.error ?? "Failed to start onboarding");
+    return result.clientSecret;
+  }, []);
+
+  function handleOnboardingExit() {
+    setShowOnboarding(false);
+    getOrganizationWalletOverview()
+      .then((overview) => update({ connectAccountId: overview.connectAccountId, connectOnboarded: overview.connectOnboarded }))
+      .catch(() => {});
   }
 
   return (
@@ -44,11 +47,6 @@ export default function Step9Payments({ state, update }: StepProps) {
       <p className="text-sm text-zinc-500 mb-8 max-w-md">{t("wizardPaymentsSubtitle")}</p>
 
       <div className="max-w-xl flex flex-col gap-5">
-        <div className="rounded-lg bg-red-50 border border-red-200 px-5 py-4">
-          <p className="text-sm font-bold text-red-800 mb-1">{t("wizardPoweredByStripe")}</p>
-          <p className="text-sm text-red-700">{t("wizardStripeExplainer")}</p>
-        </div>
-
         {state.connectOnboarded ? (
           <div className="rounded-lg border border-zinc-200 px-5 py-4 flex items-center gap-3">
             <span className="size-8 rounded-full bg-[#e21d12] flex items-center justify-center shrink-0">
@@ -56,16 +54,29 @@ export default function Step9Payments({ state, update }: StepProps) {
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </span>
-            <p className="text-sm font-semibold text-zinc-800">{t("wizardStripeConnected")}</p>
+            <p className="text-sm font-semibold text-zinc-800">{t("wizardConnected")}</p>
+          </div>
+        ) : showOnboarding ? (
+          <div className="rounded-lg border border-zinc-200 overflow-hidden">
+            <ConnectPayoutOnboarding
+              fetchClientSecret={fetchConnectClientSecret}
+              onExit={handleOnboardingExit}
+              onLoadError={() => {
+                setError(t("wizardPaymentsError"));
+                setShowOnboarding(false);
+              }}
+            />
           </div>
         ) : (
           <button
             type="button"
-            onClick={handleConnect}
-            disabled={connecting}
-            className="flex items-center justify-center gap-2 py-3.5 rounded-lg bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 transition-colors disabled:opacity-60"
+            onClick={() => {
+              setError("");
+              setShowOnboarding(true);
+            }}
+            className="flex items-center justify-center gap-2 py-3.5 rounded-lg bg-[#e21d12] text-white text-sm font-semibold hover:bg-[#d41810] transition-colors"
           >
-            {connecting ? t("wizardConnecting") : t("wizardConnectWithStripe")}
+            {t("wizardConnectButton")}
           </button>
         )}
         {error && <p className="text-sm text-red-500 font-medium">{error}</p>}

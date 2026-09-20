@@ -1,7 +1,7 @@
-// /dashboard/wallet: athlete wallet balance/transactions. `deposit`/
-// `connect` query params are set by Stripe redirecting back here after a
-// checkout or Connect-onboarding round trip, read by WalletClient to show
-// the right success state.
+// /dashboard/wallet: athlete wallet balance/transactions. `deposit` query
+// param is set by Stripe redirecting back here after a wallet top-up
+// Checkout session, read by WalletClient to show the success banner.
+// Connect onboarding no longer redirects — see ConnectPayoutOnboarding.
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getTranslations } from "next-intl/server";
@@ -12,7 +12,7 @@ import WalletClient from "@/components/dashboard/WalletClient";
 export default async function DashboardWalletPage({
   searchParams,
 }: {
-  searchParams: Promise<{ deposit?: string; connect?: string }>;
+  searchParams: Promise<{ deposit?: string }>;
 }) {
   const [session, t, params] = await Promise.all([
     auth.api.getSession({ headers: await headers() }),
@@ -37,11 +37,7 @@ export default async function DashboardWalletPage({
       </h1>
       <p className="text-zinc-500 text-sm mb-10">{t("subtitle")}</p>
 
-      <WalletClient
-        overview={overview}
-        depositSuccess={params.deposit === "success"}
-        connectReturn={params.connect === "return"}
-      />
+      <WalletClient overview={overview} depositSuccess={params.deposit === "success"} />
     </div>
   );
 }

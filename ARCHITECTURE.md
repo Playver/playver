@@ -60,7 +60,7 @@ src/
   i18n/                  # next-intl config (routing.ts, request.ts)
 messages/en.json, messages/fr.json   # all UI copy, see §9
 scripts/                 # manual one-off DB migration scripts, see §5
-docs/                    # narrower how-to docs (currently just Stripe testing)
+docs/                    # narrower how-to docs — Stripe testing, cashout/refunds/cancellations, a full payments test checklist
 ```
 
 Only three route segments have their own `layout.tsx` beyond the locale root: `dashboard/`, `organizer/`, and `[locale]/` itself. Every other page composes `Navbar`/`Footer` (or, for the logged-in home feed, its own `FeedSidebar`) directly rather than inheriting a shared shell.
@@ -112,6 +112,8 @@ Two Stripe Connect Express integrations exist **in parallel, not shared**: an at
 `MIN_WITHDRAWAL_CENTS`, `WITHDRAWAL_HOLD_HOURS`, and `InsufficientFundsError` are **copy-pasted between the two files**, not shared from a common module. This is known debt — if you change one of these rules, change it in both files, and consider factoring the shared logic out while you're there.
 
 Which wallet a payment lands in is decided by whether the event has an `organizationId` (org wallet) or not (legacy personal wallet) — see the branching in `event.ts`'s payment-completion functions.
+
+Connect **onboarding** (the KYC/bank-account form) renders inline via Stripe Connect embedded components (`@stripe/connect-js`, `src/components/payments/ConnectPayoutOnboarding.tsx`) styled to Playver's branding, not a redirect to Stripe's hosted `connect.stripe.com` — see `docs/cashout-refunds-cancellations.md` for the full write-up of that plus the cashout/refund/cancellation flows end to end.
 
 **Stripe safety rule**: always confirm you're using `sk_test_...` keys before any payment testing, live or local. Never use `sk_live_...` outside of actually deploying to production. See `docs/stripe-testing.md` for the full test workflow (test-mode Connect onboarding gotchas, wallet-funded join testing, held-balance expiry testing).
 

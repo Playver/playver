@@ -27,7 +27,7 @@ const refunds: LegalContent = {
         heading: "2. Paying for events and tournaments",
         blocks: [
           p(
-            "When you register for a paid event, tournament, or team, the full listed price is transferred from your wallet to the Organizer's wallet. Playver does not charge you a separate service fee on top of the listed price at this time."
+            "When you register for a paid event, tournament, or team, we apply your available wallet balance to the listed price first. If your wallet balance doesn't cover the full price, the remaining amount is charged to your card. Either way, the Organizer receives the full listed price. Playver does not charge you a separate service fee on top of the listed price at this time."
           ),
           p(
             "Unless the event listing states otherwise, or unless Section 3 applies, payments for events and tournaments are not refundable if you simply change your mind or are unable to attend. Some Organizers may choose to offer their own refund window for voluntary withdrawals; where they do, the terms will be shown to you on the event page before you pay, and those terms apply in addition to this Policy."
@@ -124,7 +124,7 @@ const refunds: LegalContent = {
         heading: "2. Payer pour des événements et tournois",
         blocks: [
           p(
-            "Lorsque vous vous inscrivez à un événement, un tournoi ou une équipe payant, le prix affiché est transféré intégralement de votre portefeuille vers celui de l'Organisateur. Playver ne vous facture actuellement aucuns frais de service additionnels au-delà du prix affiché."
+            "Lorsque vous vous inscrivez à un événement, un tournoi ou une équipe payant, nous appliquons d'abord le solde disponible de votre portefeuille au prix affiché. Si votre solde ne couvre pas le prix en entier, le montant restant est facturé à votre carte. Dans tous les cas, l'Organisateur reçoit le prix affiché en entier. Playver ne vous facture actuellement aucuns frais de service additionnels au-delà du prix affiché."
           ),
           p(
             "Sauf indication contraire sur l'annonce de l'événement, ou sauf application de la section 3, les paiements d'événements et de tournois ne sont pas remboursables si vous changez simplement d'avis ou êtes dans l'impossibilité d'y assister. Certains Organisateurs peuvent choisir d'offrir leur propre délai de remboursement pour un désistement volontaire; le cas échéant, les conditions vous seront présentées sur la page de l'événement avant le paiement, et s'ajoutent à la présente Politique."
