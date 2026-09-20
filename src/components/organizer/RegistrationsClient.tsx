@@ -4,7 +4,7 @@
 // `canViewPayments` (from getEventRegistrants) gate which columns render —
 // VIEW_SENSITIVE_PARTICIPANT_DATA and VIEW_PAYMENTS respectively, see
 // organizer-permissions.ts.
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import Image from "next/image";
 import { useLocale, useTranslations } from "next-intl";
 import {
@@ -12,11 +12,13 @@ import {
   type OrganizerEventSummary,
   type RegistrantRow,
 } from "@/app/actions/organizer-registrations";
+import { refundEventParticipant } from "@/app/actions/event";
 
 type LoadedRegistrants = {
   event: OrganizerEventSummary;
   canViewContactInfo: boolean;
   canViewPayments: boolean;
+  canIssueRefunds: boolean;
   registrants: RegistrantRow[];
 };
 
@@ -61,6 +63,9 @@ export default function RegistrationsClient({ events }: { events: OrganizerEvent
   });
   const [isPending, startTransition] = useTransition();
   const [copied, setCopied] = useState(false);
+  const [confirmRefundId, setConfirmRefundId] = useState<string | null>(null);
+  const [refundSubmittingId, setRefundSubmittingId] = useState<string | null>(null);
+  const [refundError, setRefundError] = useState<{ id: string; message: string } | null>(null);
   const data = fetchState.data;
   const loadError = fetchState.error;
   const isTournament = data?.event.eventType === "Tournament";
@@ -68,13 +73,30 @@ export default function RegistrationsClient({ events }: { events: OrganizerEvent
   const formatDate = (value: string) =>
     new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
 
-  useEffect(() => {
-    if (!selectedEventId) return;
+  const loadRegistrants = useCallback((eventId: string) => {
     startTransition(async () => {
-      const result = await getEventRegistrants(selectedEventId);
+      const result = await getEventRegistrants(eventId);
       setFetchState("error" in result ? { data: null, error: true } : { data: result, error: false });
     });
-  }, [selectedEventId]);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedEventId) return;
+    loadRegistrants(selectedEventId);
+  }, [selectedEventId, loadRegistrants]);
+
+  async function handleRefund(userId: string) {
+    setRefundSubmittingId(userId);
+    setRefundError(null);
+    const result = await refundEventParticipant(selectedEventId, userId);
+    setRefundSubmittingId(null);
+    if (result.error) {
+      setRefundError({ id: userId, message: result.error });
+      return;
+    }
+    setConfirmRefundId(null);
+    loadRegistrants(selectedEventId);
+  }
 
   const customFieldLabels = useMemo(() => {
     if (!data) return [];
@@ -249,61 +271,104 @@ export default function RegistrationsClient({ events }: { events: OrganizerEvent
             <div className="flex flex-col gap-3">
               {filteredRegistrants.map((r) => {
                 const initial = r.name[0]?.toUpperCase() ?? "?";
+                const canRefundThisRow = data.canIssueRefunds && r.payment && r.payment.status === "completed";
                 return (
-                  <div key={r.id} className="flex items-center gap-4 bg-white rounded-2xl border border-zinc-200 px-5 py-4 shadow-sm">
-                    <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-zinc-100 font-bold text-zinc-500">
-                      {r.image ? (
-                        <Image src={r.image} alt={r.name} width={44} height={44} className="size-11 object-cover" />
-                      ) : (
-                        initial
-                      )}
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-extrabold text-zinc-900 text-sm truncate">{r.name}</p>
-                        {r.team?.isCaptain && (
-                          <span className="text-xs font-semibold rounded-full px-2 py-0.5 bg-[#e21d12]/10 text-[#e21d12] border border-[#e21d12]/20">
-                            {t("registrationsCaptainBadge")}
-                          </span>
-                        )}
-                        {r.team?.pending && (
-                          <span className="text-xs font-semibold rounded-full px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200">
-                            {t("registrationsPendingBadge")}
-                          </span>
+                  <div key={r.id} className="flex flex-col bg-white rounded-2xl border border-zinc-200 shadow-sm">
+                    <div className="flex items-center gap-4 px-5 py-4">
+                      <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-zinc-100 font-bold text-zinc-500">
+                        {r.image ? (
+                          <Image src={r.image} alt={r.name} width={44} height={44} className="size-11 object-cover" />
+                        ) : (
+                          initial
                         )}
                       </div>
-                      {r.team && <p className="text-xs text-zinc-400 truncate mt-0.5">{r.team.name}</p>}
-                      <p className="text-xs text-zinc-400 truncate mt-0.5">
-                        {data.canViewContactInfo ? r.email : t("registrationsContactHidden")}
-                      </p>
-                      {data.canViewContactInfo && r.customFields.length > 0 && (
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-extrabold text-zinc-900 text-sm truncate">{r.name}</p>
+                          {r.team?.isCaptain && (
+                            <span className="text-xs font-semibold rounded-full px-2 py-0.5 bg-[#e21d12]/10 text-[#e21d12] border border-[#e21d12]/20">
+                              {t("registrationsCaptainBadge")}
+                            </span>
+                          )}
+                          {r.team?.pending && (
+                            <span className="text-xs font-semibold rounded-full px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200">
+                              {t("registrationsPendingBadge")}
+                            </span>
+                          )}
+                        </div>
+                        {r.team && <p className="text-xs text-zinc-400 truncate mt-0.5">{r.team.name}</p>}
                         <p className="text-xs text-zinc-400 truncate mt-0.5">
-                          {r.customFields.map((f) => `${f.label}: ${f.value ?? "—"}`).join(" · ")}
+                          {data.canViewContactInfo ? r.email : t("registrationsContactHidden")}
                         </p>
+                        {data.canViewContactInfo && r.customFields.length > 0 && (
+                          <p className="text-xs text-zinc-400 truncate mt-0.5">
+                            {r.customFields.map((f) => `${f.label}: ${f.value ?? "—"}`).join(" · ")}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col items-end gap-1 shrink-0 text-right">
+                        <span className="text-xs text-zinc-400">{formatDate(r.joinedAt)}</span>
+                        {data.canViewPayments ? (
+                          r.payment && (
+                            <span className="text-xs font-semibold rounded-full px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              {t("registrationsPaid")} · {formatCents(r.payment.amountCents)}
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-xs text-zinc-300">{t("registrationsPaymentHidden")}</span>
+                        )}
+                      </div>
+
+                      {data.canViewContactInfo && r.email && (
+                        <a
+                          href={`mailto:${r.email}`}
+                          className="shrink-0 whitespace-nowrap px-3 py-1.5 text-xs font-semibold text-zinc-700 border border-zinc-200 rounded-lg hover:bg-zinc-50 transition-colors"
+                        >
+                          {t("registrationsContact")}
+                        </a>
+                      )}
+
+                      {canRefundThisRow && confirmRefundId !== r.id && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRefundError(null);
+                            setConfirmRefundId(r.id);
+                          }}
+                          className="shrink-0 whitespace-nowrap px-3 py-1.5 text-xs font-semibold text-[#e21d12] border border-[#e21d12]/30 rounded-lg hover:bg-red-50 transition-colors"
+                        >
+                          {t("registrationsIssueRefund")}
+                        </button>
                       )}
                     </div>
 
-                    <div className="flex flex-col items-end gap-1 shrink-0 text-right">
-                      <span className="text-xs text-zinc-400">{formatDate(r.joinedAt)}</span>
-                      {data.canViewPayments ? (
-                        r.payment && (
-                          <span className="text-xs font-semibold rounded-full px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            {t("registrationsPaid")} · {formatCents(r.payment.amountCents)}
-                          </span>
-                        )
-                      ) : (
-                        <span className="text-xs text-zinc-300">{t("registrationsPaymentHidden")}</span>
-                      )}
-                    </div>
-
-                    {data.canViewContactInfo && r.email && (
-                      <a
-                        href={`mailto:${r.email}`}
-                        className="shrink-0 whitespace-nowrap px-3 py-1.5 text-xs font-semibold text-zinc-700 border border-zinc-200 rounded-lg hover:bg-zinc-50 transition-colors"
-                      >
-                        {t("registrationsContact")}
-                      </a>
+                    {canRefundThisRow && confirmRefundId === r.id && (
+                      <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-t border-zinc-100 bg-red-50/50">
+                        <p className="flex-1 min-w-[220px] text-xs font-semibold text-zinc-700">
+                          {t("registrationsRefundConfirm", { name: r.name, amount: formatCents(r.payment!.amountCents) })}
+                        </p>
+                        {refundError?.id === r.id && (
+                          <p className="w-full text-xs font-semibold text-red-600">{refundError.message}</p>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setConfirmRefundId(null)}
+                          disabled={refundSubmittingId === r.id}
+                          className="px-3 py-1.5 text-xs font-semibold text-zinc-700 border border-zinc-200 rounded-lg hover:bg-white transition-colors disabled:opacity-50"
+                        >
+                          {t("registrationsCancel")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRefund(r.id)}
+                          disabled={refundSubmittingId === r.id}
+                          className="px-3 py-1.5 text-xs font-semibold text-white bg-[#e21d12] rounded-lg hover:bg-[#d41810] transition-colors disabled:opacity-60"
+                        >
+                          {refundSubmittingId === r.id ? t("registrationsRefunding") : t("registrationsConfirmRefund")}
+                        </button>
+                      </div>
                     )}
                   </div>
                 );

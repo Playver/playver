@@ -1,10 +1,15 @@
 # Testing Stripe payments locally
 
+See `docs/cashout-refunds-cancellations.md` for how the payment, cashout,
+and refund/cancellation flows actually work end to end — this doc is just
+the local test-setup mechanics.
+
 ## One-time setup
 
 1. In `.env.local`, `STRIPE_SECRET_KEY` must be a **test** key (`sk_test_...`), never `sk_live_...`. Get it from the [Stripe Dashboard](https://dashboard.stripe.com) with the "Test mode" toggle on (top right), under Developers → API keys.
-2. Authenticate the Stripe CLI once: `stripe login`
-3. Every time you test, run this in a terminal and leave it running — it forwards Stripe's test-mode webhook events to your local server:
+2. Also set `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` to the matching `pk_test_...` key from the same API keys page — required for the embedded Connect onboarding UI (`ConnectPayoutOnboarding`) on `/dashboard/wallet`, `/organizer/payments`, and the org creation wizard. Restart the dev server after setting it (it's a `NEXT_PUBLIC_` var, inlined at build time).
+3. Authenticate the Stripe CLI once: `stripe login`
+4. Every time you test, run this in a terminal and leave it running — it forwards Stripe's test-mode webhook events to your local server:
    ```
    stripe listen --forward-to localhost:3000/api/stripe/webhook
    ```
@@ -46,7 +51,9 @@ For events owned by an organization (`event.organizationId` set), money credits/
 
 ### Org-level Stripe Connect (payouts)
 
-The org creation wizard's "Connect Stripe" step, and the "Connect Payout Account" button on `/organizer/payments`, both onboard an **organization-level** Express account (`organization.stripeConnectAccountId`) — separate from any individual member's personal Connect account. Verify this didn't regress by checking `organization.stripeConnectAccountId` is set and no `user` row shares that same account id.
+The org creation wizard's "Connect Payout Account" step, and the same button on `/organizer/payments`, both onboard an **organization-level** Express account (`organization.stripeConnectAccountId`) — separate from any individual member's personal Connect account. Verify this didn't regress by checking `organization.stripeConnectAccountId` is set and no `user` row shares that same account id.
+
+Onboarding renders **inline** via Stripe Connect embedded components (`ConnectPayoutOnboarding`, `@stripe/connect-js`) — not a redirect to `connect.stripe.com` anymore. It's the same underlying KYC form and Express account either way, so everything below still applies unchanged.
 
 **Gotcha**: the phone number field on Stripe's onboarding form shows a light-gray sample number (`+1 506 234 5678`) that looks pre-filled but is actually just a placeholder — if you don't click in and type a real digit string, Stripe silently keeps `individual.phone` unset and the whole "Personal details" section stays stuck on "Incomplete" with no visible error. If onboarding won't submit, check the account's real requirements directly instead of guessing from the UI:
 ```

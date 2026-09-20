@@ -98,7 +98,7 @@ const terms: LegalContent = {
         heading: "6. Payments, the Playver wallet, and fees",
         blocks: [
           p(
-            "Paid registrations on Playver are processed through the Playver wallet. You can add funds to your wallet by card; paying for a paid event, tournament, or team moves funds from your wallet to the Organizer's wallet. Organizers can withdraw available wallet funds to a linked bank account through our payment partner, Stripe, subject to identity verification and the holds and minimums described in our Refund & Cancellation Policy."
+            "Paid registrations on Playver are processed through the Playver wallet. You can add funds to your wallet by card; paying for a paid event, tournament, or team applies your wallet balance to the price first and charges any remaining amount to your card, and the Organizer receives the full listed price either way. Organizers can withdraw available wallet funds to a linked bank account through our payment partner, Stripe, subject to identity verification and the holds and minimums described in our Refund & Cancellation Policy."
           ),
           p(
             "Card payments are processed by Stripe, Inc. Playver does not store your full card number. Details on refunds, holds, and fees are set out in our Refund & Cancellation Policy, which forms part of these Terms."
@@ -316,7 +316,7 @@ const terms: LegalContent = {
         heading: "6. Paiements, portefeuille Playver et frais",
         blocks: [
           p(
-            "Les inscriptions payantes sur Playver sont traitées au moyen du portefeuille Playver. Vous pouvez ajouter des fonds à votre portefeuille par carte; le paiement d'un événement, tournoi ou équipe payant transfère des fonds de votre portefeuille vers celui de l'Organisateur. Les Organisateurs peuvent retirer les fonds disponibles de leur portefeuille vers un compte bancaire lié par l'entremise de notre partenaire de paiement, Stripe, sous réserve d'une vérification d'identité et des délais de retenue et montants minimaux décrits dans notre Politique de remboursement et d'annulation."
+            "Les inscriptions payantes sur Playver sont traitées au moyen du portefeuille Playver. Vous pouvez ajouter des fonds à votre portefeuille par carte; le paiement d'un événement, tournoi ou équipe payant applique d'abord votre solde de portefeuille au prix, puis facture tout montant restant à votre carte — l'Organisateur reçoit le prix affiché en entier dans tous les cas. Les Organisateurs peuvent retirer les fonds disponibles de leur portefeuille vers un compte bancaire lié par l'entremise de notre partenaire de paiement, Stripe, sous réserve d'une vérification d'identité et des délais de retenue et montants minimaux décrits dans notre Politique de remboursement et d'annulation."
           ),
           p(
             "Les paiements par carte sont traités par Stripe, Inc. Playver ne conserve pas votre numéro de carte complet. Les détails relatifs aux remboursements, aux retenues et aux frais figurent dans notre Politique de remboursement et d'annulation, laquelle fait partie intégrante des présentes Conditions."

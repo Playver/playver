@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { eventId } = await request.json();
+  const { eventId, useWallet = true } = await request.json();
   if (typeof eventId !== "string" || !eventId) {
     return NextResponse.json({ error: "Invalid event" }, { status: 400 });
   }
@@ -45,7 +45,10 @@ export async function POST(request: Request) {
   }
 
   const price = Number(event.price);
-  const availableBalance = await getAvailableWalletBalance(session.user.id);
+  // useWallet: false means the player explicitly chose "pay full amount by
+  // card" in the confirmation dialog (EventJoinButton) instead of having
+  // their wallet balance applied automatically.
+  const availableBalance = useWallet === false ? 0 : await getAvailableWalletBalance(session.user.id);
   const creditCents = Math.min(availableBalance, price);
   const remainderCents = price - creditCents;
 

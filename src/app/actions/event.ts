@@ -1052,6 +1052,83 @@ async function notifyAdminsOfRefundIssues(
   );
 }
 
+// The reverse of payForEventWithWallet/payForTeamWithWallet's transfer:
+// organizer (or org) debited, payer credited, in one transaction. Shared by
+// runEventRefundSweep (the bulk cancel-time sweep, below) and
+// refundEventParticipant (a single manual refund, further below) — the two
+// callers differ only in which rows they look up and mark refunded, not in
+// how the money moves.
+async function reverseWalletPayment({
+  organizerId,
+  organizationId,
+  payerId,
+  amount,
+  refKind,
+  refId,
+  markRefunded,
+}: {
+  organizerId: string;
+  organizationId: string | null;
+  payerId: string;
+  amount: number;
+  refKind: "eventId" | "teamId";
+  refId: string;
+  markRefunded: (client: PoolClient) => Promise<void>;
+}) {
+  await withTransaction(async (client) => {
+    let organizerBalanceAfter = 0;
+    if (organizationId) {
+      // Crediting a different table (organization) than the payer (user)
+      // removes the same-table deadlock risk the sorted-lock-order trick
+      // in the legacy branch below exists for.
+      const debit = await client.query(
+        `UPDATE "organization" SET "walletBalance" = "walletBalance" - $1 WHERE id = $2 AND "walletBalance" >= $1 RETURNING "walletBalance"`,
+        [amount, organizationId]
+      );
+      if (debit.rowCount === 0) throw new Error("Organization balance too low to refund");
+      organizerBalanceAfter = Number(debit.rows[0].walletBalance);
+      await client.query(`UPDATE "user" SET "walletBalance" = "walletBalance" + $1 WHERE id = $2`, [amount, payerId]);
+    } else {
+      // Fixed sorted lock order, same invariant as payForEventWithWallet/payForTeamWithWallet —
+      // but direction is REVERSED here: organizer is debited, payer is credited.
+      const orderedIds = [organizerId, payerId].sort();
+      for (const id of orderedIds) {
+        if (id === organizerId) {
+          const debit = await client.query(
+            `UPDATE "user" SET "walletBalance" = "walletBalance" - $1 WHERE id = $2 AND "walletBalance" >= $1 RETURNING "walletBalance"`,
+            [amount, organizerId]
+          );
+          if (debit.rowCount === 0) throw new Error("Organizer balance too low to refund");
+          organizerBalanceAfter = Number(debit.rows[0].walletBalance);
+        } else {
+          await client.query(`UPDATE "user" SET "walletBalance" = "walletBalance" + $1 WHERE id = $2`, [amount, payerId]);
+        }
+      }
+    }
+    const payerBalanceRes = await client.query(`SELECT "walletBalance" FROM "user" WHERE id = $1`, [payerId]);
+
+    if (organizationId) {
+      await client.query(
+        `INSERT INTO "wallet_transaction" (id, "organizationId", type, amount, "balanceAfter", "${refKind}")
+         VALUES ($1, $2, 'refund_sent', $3, $4, $5)`,
+        [crypto.randomUUID(), organizationId, -amount, organizerBalanceAfter, refId]
+      );
+    } else {
+      await client.query(
+        `INSERT INTO "wallet_transaction" (id, "userId", type, amount, "balanceAfter", "${refKind}")
+         VALUES ($1, $2, 'refund_sent', $3, $4, $5)`,
+        [crypto.randomUUID(), organizerId, -amount, organizerBalanceAfter, refId]
+      );
+    }
+    await client.query(
+      `INSERT INTO "wallet_transaction" (id, "userId", type, amount, "balanceAfter", "${refKind}")
+       VALUES ($1, $2, 'refund_received', $3, $4, $5)`,
+      [crypto.randomUUID(), payerId, amount, payerBalanceRes.rows[0].walletBalance, refId]
+    );
+    await markRefunded(client);
+  });
+}
+
 // Refunds every still-unrefunded wallet-funded payment for this event/tournament,
 // reversing the original payForEventWithWallet/payForTeamWithWallet transfer
 // (organizer debited, payer credited). Gated purely on refundedAt IS NULL — not on
@@ -1079,58 +1156,7 @@ export async function runEventRefundSweep(
     refId: string,
     markRefunded: (client: PoolClient) => Promise<void>
   ) {
-    await withTransaction(async (client) => {
-      let organizerBalanceAfter = 0;
-      if (organizationId) {
-        // Crediting a different table (organization) than the payer (user)
-        // removes the same-table deadlock risk the sorted-lock-order trick
-        // in the legacy branch below exists for.
-        const debit = await client.query(
-          `UPDATE "organization" SET "walletBalance" = "walletBalance" - $1 WHERE id = $2 AND "walletBalance" >= $1 RETURNING "walletBalance"`,
-          [amount, organizationId]
-        );
-        if (debit.rowCount === 0) throw new Error("Organization balance too low to refund");
-        organizerBalanceAfter = Number(debit.rows[0].walletBalance);
-        await client.query(`UPDATE "user" SET "walletBalance" = "walletBalance" + $1 WHERE id = $2`, [amount, payerId]);
-      } else {
-        // Fixed sorted lock order, same invariant as payForEventWithWallet/payForTeamWithWallet —
-        // but direction is REVERSED here: organizer is debited, payer is credited.
-        const orderedIds = [organizerId, payerId].sort();
-        for (const id of orderedIds) {
-          if (id === organizerId) {
-            const debit = await client.query(
-              `UPDATE "user" SET "walletBalance" = "walletBalance" - $1 WHERE id = $2 AND "walletBalance" >= $1 RETURNING "walletBalance"`,
-              [amount, organizerId]
-            );
-            if (debit.rowCount === 0) throw new Error("Organizer balance too low to refund");
-            organizerBalanceAfter = Number(debit.rows[0].walletBalance);
-          } else {
-            await client.query(`UPDATE "user" SET "walletBalance" = "walletBalance" + $1 WHERE id = $2`, [amount, payerId]);
-          }
-        }
-      }
-      const payerBalanceRes = await client.query(`SELECT "walletBalance" FROM "user" WHERE id = $1`, [payerId]);
-
-      if (organizationId) {
-        await client.query(
-          `INSERT INTO "wallet_transaction" (id, "organizationId", type, amount, "balanceAfter", "${refKind}")
-           VALUES ($1, $2, 'refund_sent', $3, $4, $5)`,
-          [crypto.randomUUID(), organizationId, -amount, organizerBalanceAfter, refId]
-        );
-      } else {
-        await client.query(
-          `INSERT INTO "wallet_transaction" (id, "userId", type, amount, "balanceAfter", "${refKind}")
-           VALUES ($1, $2, 'refund_sent', $3, $4, $5)`,
-          [crypto.randomUUID(), organizerId, -amount, organizerBalanceAfter, refId]
-        );
-      }
-      await client.query(
-        `INSERT INTO "wallet_transaction" (id, "userId", type, amount, "balanceAfter", "${refKind}")
-         VALUES ($1, $2, 'refund_received', $3, $4, $5)`,
-        [crypto.randomUUID(), payerId, amount, payerBalanceRes.rows[0].walletBalance, refId]
-      );
-      await markRefunded(client);
-    });
+    await reverseWalletPayment({ organizerId, organizationId, payerId, amount, refKind, refId, markRefunded });
   }
 
   if (isTournament) {
@@ -1204,7 +1230,41 @@ export async function runEventRefundSweep(
   return { refunded, pendingReview };
 }
 
-export async function cancelEvent(eventId: string): Promise<{ error?: string }> {
+// Read-only preview shown in the cancel-confirmation modal before an
+// organizer commits — "this will refund N participants a total of $X" —
+// computed the same way runEventRefundSweep selects rows, but without
+// touching anything.
+export async function getEventRefundPreview(
+  eventId: string
+): Promise<{ error?: string; count?: number; totalCents?: number }> {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) return { error: "Unauthorized" };
+
+  const authResult = await authorizeEventManagement(eventId, session.user.id);
+  if ("error" in authResult) return { error: authResult.error };
+
+  const isTournament = authResult.event.eventType === "Tournament";
+  const result = isTournament
+    ? await pool.query(
+        `SELECT COUNT(*)::int as count, COALESCE(SUM(ttp.amount), 0)::bigint as total
+         FROM "tournament_team_payment" ttp
+         JOIN "tournament_team" tt ON tt.id = ttp."teamId"
+         WHERE tt."tournamentId" = $1 AND ttp."refundedAt" IS NULL`,
+        [eventId]
+      )
+    : await pool.query(
+        `SELECT COUNT(*)::int as count, COALESCE(SUM(amount), 0)::bigint as total
+         FROM "event_payment"
+         WHERE "eventId" = $1 AND status = 'completed' AND method IN ('wallet', 'stripe_direct') AND "refundedAt" IS NULL`,
+        [eventId]
+      );
+
+  return { count: Number(result.rows[0].count), totalCents: Number(result.rows[0].total) };
+}
+
+export async function cancelEvent(
+  eventId: string
+): Promise<{ error?: string; refundedCount?: number; refundedTotalCents?: number; pendingReviewCount?: number }> {
   try {
     const session = await auth.api.getSession({ headers: await headers() });
     if (!session) return { error: "Unauthorized" };
@@ -1244,11 +1304,102 @@ export async function cancelEvent(eventId: string): Promise<{ error?: string }> 
     revalidatePath(`/events/${eventId}`);
     revalidatePath("/events");
     revalidatePath("/dashboard");
-    return {};
+
+    const refundedTotalCents = Array.from(refunded.values()).reduce((sum, amount) => sum + amount, 0);
+    return { refundedCount: refunded.size, refundedTotalCents, pendingReviewCount: pendingReview.size };
   } catch (e) {
     console.error("[cancelEvent]", e);
     return { error: e instanceof Error ? e.message : "Unknown error" };
   }
+}
+
+async function sendIndividualRefundEmail(
+  to: string,
+  data: { userName: string; eventTitle: string; amountCents: number; eventId: string }
+) {
+  const html = layout(`
+    <p style="margin:0 0 6px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#e21d12;">Refund issued</p>
+    <h1 style="margin:0 0 16px;font-size:22px;font-weight:900;color:#18181b;">You've been refunded for "${data.eventTitle}"</h1>
+    <p style="font-size:14px;color:#52525b;line-height:1.7;">Hi ${data.userName}, the organizer has refunded your registration for "${data.eventTitle}" and removed you from the event. ${(data.amountCents / 100).toFixed(2)} CAD has been credited to your Playver wallet.</p>
+    <center>${ctaButton(`${BASE_URL}/dashboard/wallet`, "View your wallet →")}</center>
+  `);
+  await resend.emails
+    .send({ from: FROM, to, subject: `You've been refunded for "${data.eventTitle}"`, html })
+    .catch(() => {});
+}
+
+// Manual, single-participant refund — for when something goes wrong for one
+// specific signup (an injury, a duplicate registration, a seat the organizer
+// needs to free up) without cancelling the whole event. Reuses
+// reverseWalletPayment, the same reversal reverseWalletPayment/
+// runEventRefundSweep uses for a full cancellation, but targets exactly one
+// event_payment row instead of every unrefunded one. Also removes the
+// participant — a refunded seat isn't an occupied seat, and this keeps
+// capacity-limited events correct.
+export async function refundEventParticipant(eventId: string, userId: string): Promise<{ error?: string }> {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) return { error: "Unauthorized" };
+
+  const eventRes = await pool.query(
+    `SELECT id, title, "eventType", "organizerId", "organizationId" FROM "event" WHERE id = $1`,
+    [eventId]
+  );
+  const event = eventRes.rows[0];
+  if (!event) return { error: "Event not found" };
+  if (event.eventType === "Tournament") {
+    return { error: "Tournament team payments are refunded by cancelling the tournament" };
+  }
+
+  const organizerId = event.organizerId as string;
+  const organizationId = event.organizationId as string | null;
+
+  if (organizationId) {
+    try {
+      await requireOrganizationPermission("ISSUE_REFUNDS");
+    } catch {
+      return { error: "You don't have permission to issue refunds" };
+    }
+  } else if (session.user.id !== organizerId) {
+    return { error: "Unauthorized" };
+  }
+
+  const paymentRes = await pool.query(
+    `SELECT id, amount FROM "event_payment"
+     WHERE "eventId" = $1 AND "userId" = $2 AND status = 'completed' AND method IN ('wallet', 'stripe_direct') AND "refundedAt" IS NULL`,
+    [eventId, userId]
+  );
+  const payment = paymentRes.rows[0];
+  if (!payment) return { error: "No refundable payment found for this participant" };
+  const amount = Number(payment.amount);
+
+  try {
+    await reverseWalletPayment({
+      organizerId,
+      organizationId,
+      payerId: userId,
+      amount,
+      refKind: "eventId",
+      refId: eventId,
+      markRefunded: async (client) => {
+        await client.query(`UPDATE "event_payment" SET status = 'refunded', "refundedAt" = NOW() WHERE id = $1`, [payment.id]);
+        await client.query(`DELETE FROM "event_participant" WHERE "eventId" = $1 AND "userId" = $2`, [eventId, userId]);
+      },
+    });
+  } catch (e) {
+    console.error("[refundEventParticipant]", e);
+    return { error: e instanceof Error ? e.message : "Something went wrong — please try again" };
+  }
+
+  const userRow = await pool.query(`SELECT name, email FROM "user" WHERE id = $1`, [userId]);
+  const u = userRow.rows[0];
+  if (u?.email) {
+    sendIndividualRefundEmail(u.email, { userName: u.name ?? "Athlete", eventTitle: event.title, amountCents: amount, eventId }).catch(() => {});
+  }
+
+  revalidatePath(`/events/${eventId}`);
+  revalidatePath("/organizer/registrations");
+  revalidatePath("/dashboard");
+  return {};
 }
 
 export async function postponeEvent(

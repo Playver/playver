@@ -82,6 +82,10 @@ export type EventRegistrants =
       event: OrganizerEventSummary;
       canViewContactInfo: boolean;
       canViewPayments: boolean;
+      // Individual (non-tournament) events only — see refundEventParticipant
+      // in event.ts. Tournament team payments are refunded by cancelling the
+      // tournament, not per-member.
+      canIssueRefunds: boolean;
       registrants: RegistrantRow[];
     };
 
@@ -107,6 +111,7 @@ export async function getEventRegistrants(eventId: string): Promise<EventRegistr
 
   const canViewContactInfo = hasPermission(role, "VIEW_SENSITIVE_PARTICIPANT_DATA");
   const canViewPayments = hasPermission(role, "VIEW_PAYMENTS");
+  const canIssueRefunds = eventRow.eventType !== "Tournament" && hasPermission(role, "ISSUE_REFUNDS");
 
   const registrants: RegistrantRow[] =
     eventRow.eventType === "Tournament"
@@ -117,6 +122,7 @@ export async function getEventRegistrants(eventId: string): Promise<EventRegistr
     event: mapEventSummary({ ...eventRow, participantCount: registrants.length }),
     canViewContactInfo,
     canViewPayments,
+    canIssueRefunds,
     registrants,
   };
 }

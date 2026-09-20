@@ -9,12 +9,8 @@ import { hasPermission } from "@/lib/organizer-permissions";
 import ComingSoonPanel from "@/components/organizer/ComingSoonPanel";
 import OrganizerPaymentsClient from "@/components/organizer/OrganizerPaymentsClient";
 
-export default async function OrganizerPaymentsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ connect?: string }>;
-}) {
-  const [t, params] = await Promise.all([getTranslations("Organizer"), searchParams]);
+export default async function OrganizerPaymentsPage() {
+  const t = await getTranslations("Organizer");
 
   let overview, canManagePayments;
   try {
@@ -44,11 +40,7 @@ export default async function OrganizerPaymentsPage({
         {t("navPayments")}
       </h1>
 
-      <OrganizerPaymentsClient
-        overview={overview}
-        canManagePayments={canManagePayments}
-        connectReturn={params.connect === "return"}
-      />
+      <OrganizerPaymentsClient overview={overview} canManagePayments={canManagePayments} />
     </div>
   );
 }

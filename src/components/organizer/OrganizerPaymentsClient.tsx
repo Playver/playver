@@ -3,17 +3,17 @@
 // Org wallet page: Stripe Connect onboarding link + balance/withdrawal UI.
 // `overview.availableBalance` already excludes the 48h post-event hold (see
 // organizer-wallet.ts) — this component just renders it, no hold-math here.
-import { useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { formatPrice } from "@/lib/format-price";
-import { createOrganizationConnectOnboardingLink, requestOrganizationWithdrawal } from "@/app/actions/organizer-wallet";
+import { createOrganizationConnectAccountSession, requestOrganizationWithdrawal } from "@/app/actions/organizer-wallet";
 import type { OrganizationWalletTransaction } from "@/app/actions/organizer-wallet";
+import ConnectPayoutOnboarding from "@/components/payments/ConnectPayoutOnboarding";
 
 export default function OrganizerPaymentsClient({
   overview,
   canManagePayments,
-  connectReturn,
 }: {
   overview: {
     balance: number;
@@ -24,27 +24,27 @@ export default function OrganizerPaymentsClient({
     transactions: OrganizationWalletTransaction[];
   };
   canManagePayments: boolean;
-  connectReturn: boolean;
 }) {
   const t = useTranslations("Organizer");
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [connectLoading, setConnectLoading] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [justExitedOnboarding, setJustExitedOnboarding] = useState(false);
   const [connectError, setConnectError] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawError, setWithdrawError] = useState("");
   const [withdrawSuccess, setWithdrawSuccess] = useState(false);
 
-  async function handleConnect() {
-    setConnectLoading(true);
-    setConnectError("");
-    const result = await createOrganizationConnectOnboardingLink("/organizer/payments");
-    if (result.url) {
-      window.location.href = result.url;
-      return;
-    }
-    setConnectError(result.error ?? t("paymentsErrorGeneric"));
-    setConnectLoading(false);
+  const fetchConnectClientSecret = useCallback(async () => {
+    const result = await createOrganizationConnectAccountSession();
+    if (!result.clientSecret) throw new Error(result.error ?? "Failed to start onboarding");
+    return result.clientSecret;
+  }, []);
+
+  function handleOnboardingExit() {
+    setShowOnboarding(false);
+    setJustExitedOnboarding(true);
+    router.refresh();
   }
 
   function handleWithdraw(e: React.FormEvent) {
@@ -70,7 +70,7 @@ export default function OrganizerPaymentsClient({
 
   return (
     <div className="flex flex-col gap-8">
-      {connectReturn && !overview.connectOnboarded && (
+      {justExitedOnboarding && !overview.connectOnboarded && (
         <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700 font-semibold">
           {t("paymentsConnectPending")}
         </div>
@@ -92,16 +92,31 @@ export default function OrganizerPaymentsClient({
           <h2 className="text-base font-bold text-zinc-900 mb-6">{t("paymentsPayoutTitle")}</h2>
           {!overview.connectOnboarded ? (
             <div className="flex flex-col gap-4">
-              <p className="text-sm text-zinc-500">{t("paymentsConnectDescription")}</p>
+              {!showOnboarding && <p className="text-sm text-zinc-500">{t("paymentsConnectDescription")}</p>}
               {connectError && <p className="text-xs font-semibold text-red-600">{connectError}</p>}
-              <button
-                type="button"
-                onClick={handleConnect}
-                disabled={connectLoading}
-                className="w-full py-3 text-sm font-semibold text-white rounded-lg bg-zinc-900 hover:bg-zinc-800 transition-colors shadow-sm disabled:opacity-60"
-              >
-                {connectLoading ? "..." : overview.connectAccountId ? t("paymentsContinueConnect") : t("paymentsConnectButton")}
-              </button>
+              {showOnboarding ? (
+                <div className="rounded-lg border border-zinc-200 overflow-hidden">
+                  <ConnectPayoutOnboarding
+                    fetchClientSecret={fetchConnectClientSecret}
+                    onExit={handleOnboardingExit}
+                    onLoadError={() => {
+                      setConnectError(t("paymentsErrorGeneric"));
+                      setShowOnboarding(false);
+                    }}
+                  />
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConnectError("");
+                    setShowOnboarding(true);
+                  }}
+                  className="w-full py-3 text-sm font-semibold text-white rounded-lg bg-[#e21d12] hover:bg-[#d41810] transition-colors shadow-sm"
+                >
+                  {overview.connectAccountId ? t("paymentsContinueConnect") : t("paymentsConnectButton")}
+                </button>
+              )}
             </div>
           ) : (
             <form onSubmit={handleWithdraw} className="flex flex-col gap-5">

@@ -39,6 +39,7 @@ export default function EventJoinButton({
   const [isPending, startTransition] = useTransition();
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [showPayConfirm, setShowPayConfirm] = useState(false);
   const [responses, setResponses] = useState<Record<string, string>>({});
   const [fileUploading, setFileUploading] = useState<Record<string, boolean>>({});
   const [formError, setFormError] = useState("");
@@ -50,33 +51,47 @@ export default function EventJoinButton({
   const walletCredit = Math.min(availableWalletCents, price);
   const amountDueCents = Math.max(0, price - walletCredit);
 
+  async function startPayment(useWallet: boolean) {
+    setShowPayConfirm(false);
+    setPaymentLoading(true);
+    setJoinError("");
+    try {
+      const res = await fetch("/api/stripe/event-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId, useWallet }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setJoinError(data.error ?? t("registrationError"));
+        setPaymentLoading(false);
+        return;
+      }
+      if (data.paidByWallet) {
+        setJoined(true);
+        setPaymentLoading(false);
+        router.refresh();
+        return;
+      }
+      window.location.href = data.url;
+    } catch {
+      setJoinError(t("registrationError"));
+      setPaymentLoading(false);
+    }
+  }
+
   async function handleJoinClick() {
     if (price > 0) {
-      setPaymentLoading(true);
-      setJoinError("");
-      try {
-        const res = await fetch("/api/stripe/event-checkout", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ eventId }),
-        });
-        const data = await res.json();
-        if (!res.ok || data.error) {
-          setJoinError(data.error ?? t("registrationError"));
-          setPaymentLoading(false);
-          return;
-        }
-        if (data.paidByWallet) {
-          setJoined(true);
-          setPaymentLoading(false);
-          router.refresh();
-          return;
-        }
-        window.location.href = data.url;
-      } catch {
-        setJoinError(t("registrationError"));
-        setPaymentLoading(false);
+      // Wallet balance would otherwise be spent silently on click — give the
+      // player an explicit choice whenever there's actually a choice to make
+      // (no wallet balance means there's nothing to confirm, it's just a
+      // normal card payment).
+      if (walletCredit > 0) {
+        setJoinError("");
+        setShowPayConfirm(true);
+        return;
       }
+      await startPayment(false);
       return;
     }
     if (hasForm) {
@@ -193,6 +208,50 @@ export default function EventJoinButton({
       )}
       {joinError && (
         <p className="text-xs font-semibold text-red-600 text-center">{joinError}</p>
+      )}
+
+      {showPayConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-5">
+            <div>
+              <h2 className="text-lg font-extrabold text-zinc-900">{t("payConfirmTitle")}</h2>
+              <p className="mt-1.5 text-sm text-zinc-500">
+                {t("payConfirmBalance", { amount: formatPrice(availableWalletCents) })}
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => startPayment(true)}
+                disabled={paymentLoading}
+                className="w-full py-2.5 text-sm font-semibold text-white bg-[#e21d12] rounded-lg hover:bg-[#d41810] transition-colors disabled:opacity-60"
+              >
+                {amountDueCents === 0
+                  ? t("payWithWalletFull", { amount: formatPrice(walletCredit) })
+                  : t("payWithWalletPartial", { credit: formatPrice(walletCredit), remainder: formatPrice(amountDueCents) })}
+              </button>
+              <button
+                type="button"
+                onClick={() => startPayment(false)}
+                disabled={paymentLoading}
+                className="w-full py-2.5 text-sm font-semibold text-zinc-700 border border-zinc-200 rounded-lg hover:bg-zinc-50 transition-colors disabled:opacity-60"
+              >
+                {t("payWithCardOnly", { amount: formatPrice(price) })}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPayConfirm(false)}
+                disabled={paymentLoading}
+                className="text-sm font-semibold text-zinc-500 hover:text-zinc-700 transition-colors disabled:opacity-60"
+              >
+                {t("registrationCancel")}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showModal && (
