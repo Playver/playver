@@ -10,7 +10,7 @@ import EventCard from "@/components/events/EventCard";
 import EventListRow from "@/components/events/EventListRow";
 import type { EventItem } from "@/app/actions/event";
 
-type EventType = "all" | "league" | "tournament" | "activity";
+type EventType = "all" | "league" | "tournament" | "activity" | "tryouts" | "camps" | "community" | "galas";
 type Sport =
   | "all" | "soccer" | "basketball" | "volleyball" | "pickleball"
   | "tennis" | "hockey" | "baseball" | "cricket" | "rugby" | "other";
@@ -100,6 +100,10 @@ export default function DiscoverSearch({
     { key: "tournament", label: t("typeTournament") },
     { key: "league", label: t("typeLeague") },
     { key: "activity", label: t("typeActivity") },
+    { key: "tryouts", label: t("typeTryouts") },
+    { key: "camps", label: t("typeCamps") },
+    { key: "community", label: t("typeCommunity") },
+    { key: "galas", label: t("typeGalas") },
   ];
 
   const sports: { key: Sport; label: string }[] = [
