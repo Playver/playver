@@ -17,7 +17,7 @@
 
 import { Pool } from "@neondatabase/serverless";
 import { execFileSync } from "child_process";
-import { readFileSync, writeFileSync } from "fs";
+import { readdirSync, readFileSync, writeFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -44,6 +44,9 @@ const MIGRATION_SCRIPTS = [
   "migrate-organizations.mjs",
   "migrate-organization-invitations.mjs",
   "migrate-organization-onboarding.mjs",
+  "migrate-organization-size.mjs",
+  "migrate-organization-teams.mjs",
+  "migrate-organization-partners.mjs",
   "migrate-event-organization.mjs",
   "__inject_lazy_tables__",
   "migrate-wallet.mjs",
@@ -54,6 +57,39 @@ const MIGRATION_SCRIPTS = [
   "migrate-event-status.mjs",
   "migrate-organization-wallet.mjs",
 ];
+
+// migrate-*.mjs files that intentionally do NOT belong in MIGRATION_SCRIPTS —
+// one-off historical backfills tied to the old-DB import, meaningless against
+// a genuinely empty staging DB that was never migrated from it. Anything
+// else under scripts/migrate-*.mjs must be schema (a CREATE TABLE/ALTER
+// TABLE, even if script-owned rather than lazily created at runtime — see
+// ARCHITECTURE.md §5), which staging DOES need, so it belongs in the list
+// above. New migrate-*.mjs scripts are trivial to forget adding here since
+// nothing else references this file — this is exactly what caused
+// organization_team/organization_partner to be silently missing from
+// staging (2026-09-29) while the app code that reads them shipped fine.
+const INTENTIONALLY_EXCLUDED = new Set([
+  "migrate-from-old-db.mjs",
+  "migrate-gallery-types.mjs",
+]);
+
+function assertNoForgottenScripts() {
+  const onDisk = readdirSync(__dirname).filter(
+    (f) => /^migrate-.*\.mjs$/.test(f) || f === "migrate.mjs"
+  );
+  const known = new Set([...MIGRATION_SCRIPTS.filter((s) => s !== "__inject_lazy_tables__"), ...INTENTIONALLY_EXCLUDED]);
+  const forgotten = onDisk.filter((f) => !known.has(f));
+  if (forgotten.length > 0) {
+    console.error(
+      `\nRefusing to run: found migrate-*.mjs script(s) not accounted for in ` +
+        `run-staging-migrations.mjs's MIGRATION_SCRIPTS or INTENTIONALLY_EXCLUDED list:\n` +
+        forgotten.map((f) => `  - ${f}`).join("\n") +
+        `\n\nAdd each one to MIGRATION_SCRIPTS (in dependency order) if staging needs ` +
+        `its schema, or to INTENTIONALLY_EXCLUDED with a comment saying why not, then re-run.`
+    );
+    process.exit(1);
+  }
+}
 
 // Final-state schema for the three lazy-DDL table groups, copied from
 // src/lib/tournament-tables.ts, src/lib/game-tables.ts,
@@ -157,6 +193,8 @@ async function injectLazyTables() {
   await pool.end();
   console.log("[staging] ✓ lazy tables");
 }
+
+assertNoForgottenScripts();
 
 const originalEnvLocal = readFileSync(envLocalPath, "utf8");
 
