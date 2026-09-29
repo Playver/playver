@@ -147,6 +147,14 @@ export type EventPricingTier = {
   sortOrder: number;
 };
 
+// Display-only for now (Stage 4) — "every Monday, Sept 21-Dec 7" rendered
+// as text, not a generator of individual session occurrences/attendance.
+export type RecurrenceRule = {
+  daysOfWeek: string[];
+  startDate: string;
+  endDate: string;
+};
+
 export type EventItem = ReturnType<typeof serializeEvent>;
 // Public-facing shape only — deliberately excludes email. This is rendered on
 // the public event page, which any visitor (including logged-out ones) can
@@ -212,6 +220,8 @@ export async function createEvent(data: {
   rules?: string;
   customFormEnabled?: boolean;
   price?: number;
+  hasCompetitionSchedule?: boolean;
+  recurrenceRule?: RecurrenceRule | null;
   formFields?: Array<{
     label: string;
     fieldType: string;
@@ -253,8 +263,9 @@ export async function createEvent(data: {
        id, title, sport, "eventType", location,
        "startDateTime", "endDateTime", "coverImageUrl", "galleryUrls", "galleryItems",
        "registrationMode", capacity, "maxPlayersPerTeam",
-       description, rules, "organizerId", "organizationId", "customFormEnabled", price, "agendaItems", "createdAt", "updatedAt"
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20::jsonb,NOW(),NOW())`,
+       description, rules, "organizerId", "organizationId", "customFormEnabled", price, "agendaItems",
+       "hasCompetitionSchedule", "recurrenceRule", "createdAt", "updatedAt"
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20::jsonb,$21,$22::jsonb,NOW(),NOW())`,
     [
       id, data.title, data.sport, data.eventType, data.location,
       data.startDateTime, data.endDateTime, data.coverImageUrl ?? null,
@@ -264,6 +275,8 @@ export async function createEvent(data: {
       organization.id,
       data.customFormEnabled ?? false, data.price ?? 0,
       JSON.stringify(agendaItems),
+      data.hasCompetitionSchedule ?? false,
+      data.recurrenceRule ? JSON.stringify(data.recurrenceRule) : null,
     ]
   );
 
@@ -1071,6 +1084,8 @@ export async function updateEvent(eventId: string, data: {
   rules?: string;
   customFormEnabled?: boolean;
   price?: number;
+  hasCompetitionSchedule?: boolean;
+  recurrenceRule?: RecurrenceRule | null;
   formFields?: Array<{
     label: string;
     fieldType: string;
@@ -1115,8 +1130,9 @@ export async function updateEvent(eventId: string, data: {
       "registrationMode"=$10, capacity=$11, "maxPlayersPerTeam"=$12,
       description=$13, rules=$14, "customFormEnabled"=$15, price=$16,
       "agendaItems"=$17::jsonb,
+      "hasCompetitionSchedule"=$18, "recurrenceRule"=$19::jsonb,
       "updatedAt"=NOW()
-    WHERE id=$18`,
+    WHERE id=$20`,
     [
       data.title, data.sport, data.eventType, data.location,
       data.startDateTime, data.endDateTime, data.coverImageUrl ?? null,
@@ -1125,6 +1141,8 @@ export async function updateEvent(eventId: string, data: {
       data.description ?? null, data.rules ?? null,
       data.customFormEnabled ?? false, data.price ?? 0,
       JSON.stringify(agendaItems),
+      data.hasCompetitionSchedule ?? false,
+      data.recurrenceRule ? JSON.stringify(data.recurrenceRule) : null,
       eventId,
     ]
   );

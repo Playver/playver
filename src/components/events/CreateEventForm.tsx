@@ -13,7 +13,7 @@ import Image from "next/image";
 import { useRouter } from "@/i18n/routing";
 import { createEvent, updateEvent } from "@/app/actions/event";
 import { useUploadThing } from "@/lib/uploadthing";
-import type { FormFieldType, EventItem, FormField, GalleryItem, AgendaItem, EventCategory, EventPricingTier } from "@/app/actions/event";
+import type { FormFieldType, EventItem, FormField, GalleryItem, AgendaItem, EventCategory, EventPricingTier, RecurrenceRule } from "@/app/actions/event";
 
 function splitDateTime(iso: string) {
   const d = new Date(iso);
@@ -641,6 +641,27 @@ export default function CreateEventForm({
     })) ?? []
   );
 
+  // Competition schedule (Schedule/Results/Standings tabs) — only offered
+  // for team events for now (see event-flow-redesign plan's deferred
+  // individual+schedule combination). New team events default to on,
+  // matching every existing eventType="Tournament" event's real behavior;
+  // editing an existing event always reflects its actual saved value.
+  const [hasCompetitionSchedule, setHasCompetitionSchedule] = useState(
+    initialData ? initialData.hasCompetitionSchedule : true
+  );
+
+  // Recurrence — "every Monday, Sept 21-Dec 7" — only offered for
+  // individual events (a recurring class/program shape, e.g. karate/yoga),
+  // display-only for now: rendered as text on the event page, not a
+  // generator of individual session occurrences/attendance.
+  const [recurrenceDays, setRecurrenceDays] = useState<string[]>(initialData?.recurrenceRule?.daysOfWeek ?? []);
+  const [recurrenceStartDate, setRecurrenceStartDate] = useState(initialData?.recurrenceRule?.startDate ?? "");
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState(initialData?.recurrenceRule?.endDate ?? "");
+
+  function toggleRecurrenceDay(day: string) {
+    setRecurrenceDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]);
+  }
+
   // Custom form
   const [customFormEnabled, setCustomFormEnabled] = useState(initialData?.customFormEnabled ?? false);
   const [formFields, setFormFields] = useState<FormFieldDraft[]>(
@@ -856,6 +877,11 @@ export default function CreateEventForm({
           price: Math.round(parseFloat(tr.price) * 100),
           sortOrder: i,
         })),
+      hasCompetitionSchedule: registrationMode === "team" ? hasCompetitionSchedule : false,
+      recurrenceRule:
+        registrationMode === "individual" && recurrenceDays.length > 0 && recurrenceStartDate && recurrenceEndDate
+          ? ({ daysOfWeek: recurrenceDays, startDate: recurrenceStartDate, endDate: recurrenceEndDate } satisfies RecurrenceRule)
+          : null,
     };
 
     startTransition(async () => {
@@ -1071,6 +1097,59 @@ export default function CreateEventForm({
               placeholder={t("maxPlayersPlaceholder")} className={inputClass}
             />
           </Field>
+        )}
+
+        {registrationMode === "team" && (
+          <button
+            type="button"
+            onClick={() => setHasCompetitionSchedule(v => !v)}
+            className="w-full flex items-center justify-between py-3 px-4 rounded-xl border border-zinc-200 bg-zinc-50 hover:border-zinc-300 transition-colors"
+          >
+            <div className="text-left">
+              <p className="text-sm font-semibold text-zinc-700">{t("hasCompetitionScheduleLabel")}</p>
+              <p className="text-xs text-zinc-400">{t("hasCompetitionScheduleHint")}</p>
+            </div>
+            <div className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${hasCompetitionSchedule ? "bg-[#e21d12]" : "bg-zinc-200"}`}>
+              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${hasCompetitionSchedule ? "translate-x-6" : "translate-x-1"}`} />
+            </div>
+          </button>
+        )}
+
+        {registrationMode === "individual" && (
+          <div className="flex flex-col gap-2 pt-1 border-t border-zinc-100">
+            <p className="text-xs font-bold text-zinc-500 uppercase tracking-wide pt-3">{t("sectionRecurrence")}</p>
+            <p className="text-xs text-zinc-400 -mt-1">{t("sectionRecurrenceHint")}</p>
+            <div className="flex flex-wrap gap-2">
+              {(["monday","tuesday","wednesday","thursday","friday","saturday","sunday"] as const).map(day => (
+                <button
+                  key={day}
+                  type="button"
+                  onClick={() => toggleRecurrenceDay(day)}
+                  className={`px-3 py-2 text-xs font-semibold rounded-lg border transition-colors ${
+                    recurrenceDays.includes(day)
+                      ? "bg-[#e21d12] text-white border-[#e21d12]"
+                      : "bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400"
+                  }`}
+                >
+                  {t(`recurrenceDay_${day}`)}
+                </button>
+              ))}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
+              <Field label={t("recurrenceStartDate")}>
+                <input
+                  type="date" value={recurrenceStartDate} onChange={e => setRecurrenceStartDate(e.target.value)}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label={t("recurrenceEndDate")}>
+                <input
+                  type="date" value={recurrenceEndDate} min={recurrenceStartDate || undefined} onChange={e => setRecurrenceEndDate(e.target.value)}
+                  className={inputClass}
+                />
+              </Field>
+            </div>
+          </div>
         )}
 
         {/* Pricing */}

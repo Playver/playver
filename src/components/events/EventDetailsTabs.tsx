@@ -85,6 +85,16 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
 }
 
+// formatDate parses full timestamps correctly, but a bare "YYYY-MM-DD" date
+// (no time component, e.g. recurrenceRule's startDate/endDate) gets parsed
+// as UTC midnight by `new Date()`, then shifted back a day when formatted in
+// any timezone behind UTC — construct the Date from local-timezone parts
+// instead to avoid that.
+function formatDateOnly(value: string) {
+  const [y, m, d] = value.split("-").map(Number);
+  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(new Date(y, m - 1, d));
+}
+
 function formatTime(value: string) {
   return new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date(value));
 }
@@ -882,6 +892,12 @@ export default function EventDetailsTabs({
             <MetricCard icon={<span>⌖</span>} label={t("location")} value={event.location} />
             <MetricCard icon={<span>♟</span>} label={event.registrationMode === "team" ? t("tabTeams") : t("tabParticipants")} value={`${event.participantCount}/${capacity || "-"}`} />
           </div>
+          {event.recurrenceRule && (
+            <div className="rounded-xl bg-zinc-50 border border-zinc-200 px-4 py-3 text-sm text-zinc-600">
+              <span className="font-bold text-zinc-800">{t("recurrenceLabel")}:</span>{" "}
+              {event.recurrenceRule.daysOfWeek.map(d => t(`recurrenceDay_${d}`)).join(", ")}, {formatDateOnly(event.recurrenceRule.startDate)} – {formatDateOnly(event.recurrenceRule.endDate)}
+            </div>
+          )}
           <div className="grid gap-6 lg:grid-cols-2">
             <section>
               <h2 className="mb-3 text-xl font-extrabold text-zinc-950">{t("description")}</h2>

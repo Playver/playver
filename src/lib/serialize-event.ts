@@ -1,4 +1,4 @@
-import type { GalleryItem, AgendaItem } from "@/app/actions/event";
+import type { GalleryItem, AgendaItem, RecurrenceRule } from "@/app/actions/event";
 
 // Split out of event.ts (a "use server" file, where every export must be an
 // async function/Server Action) so this plain row-shaping helper can be
@@ -25,6 +25,8 @@ type EventRow = {
   organizationId: string | null;
   customFormEnabled: boolean;
   price: number;
+  hasCompetitionSchedule: boolean;
+  recurrenceRule: RecurrenceRule | null;
   status: "active" | "cancelled";
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -56,5 +58,7 @@ export function serializeEvent(row: EventRow) {
     participantCount: Number(row.participantCount ?? 0),
     customFormEnabled: row.customFormEnabled ?? false,
     price: Number(row.price ?? 0),
+    hasCompetitionSchedule: row.hasCompetitionSchedule ?? false,
+    recurrenceRule: row.recurrenceRule ?? null,
   };
 }

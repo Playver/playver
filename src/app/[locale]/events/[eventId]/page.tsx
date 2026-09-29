@@ -86,34 +86,46 @@ export default async function EventDetailsPage({
   const event = await getEventById(eventId);
   if (!event) notFound();
 
-  const isTournament = event.eventType === "Tournament";
+  // Two independent axes replacing the old single isTournament check (which
+  // was really "team registration" and "has a games schedule" conflated into
+  // one eventType==='Tournament' string comparison) — see event-flow-redesign
+  // plan Stage 4. Every existing real Tournament event has both true (that's
+  // exactly what Stage 1's backfill + this migration's hasCompetitionSchedule
+  // backfill guarantee), so this renders identically to before for them.
+  const isTeamEvent = event.registrationMode === "team";
+  const hasSchedule = event.hasCompetitionSchedule;
 
   const [joinedSet, participants, formFields, userRole, availableWalletCents, categories, tiers] = await Promise.all([
-    session && !isTournament ? getEventParticipationMap([event.id]) : Promise.resolve(new Set<string>()),
+    session && !isTeamEvent ? getEventParticipationMap([event.id]) : Promise.resolve(new Set<string>()),
     getEventParticipants(event.id),
     event.customFormEnabled ? getEventFormFields(event.id) : Promise.resolve([]),
     session ? getUserRole(session.user.id) : Promise.resolve("player" as const),
     // Not gated on event.price > 0 — a pricing tier can make an individual
     // event's real cost nonzero even when the event's own flat price is 0
     // (e.g. karate/yoga-style resident/non-resident tiers).
-    session && !isTournament ? getAvailableWalletBalance(session.user.id) : Promise.resolve(0),
+    session && !isTeamEvent ? getAvailableWalletBalance(session.user.id) : Promise.resolve(0),
     getEventCategories(event.id),
     getEventPricingTiers(event.id),
   ]);
 
-  const [teams, myTeam, myTeamOptions, games, miniEvents, tournamentPlayers] = isTournament
+  const [teams, myTeam, myTeamOptions] = isTeamEvent
     ? await Promise.all([
         getTournamentTeams(eventId),
         session ? getMyTournamentTeam(eventId) : Promise.resolve(null),
         session ? getMyTeamOptions() : Promise.resolve([]),
+      ])
+    : [[], null, []];
+
+  const [games, miniEvents, tournamentPlayers] = hasSchedule
+    ? await Promise.all([
         getGamesForEvent(eventId),
         getMiniEventsForEvent(eventId),
         getTournamentPlayers(eventId),
       ])
-    : [[], null, [], [], [], []];
+    : [[], [], []];
 
   const pendingRequests =
-    isTournament && session && myTeam && myTeam.captainId === session.user.id
+    isTeamEvent && session && myTeam && myTeam.captainId === session.user.id
       ? await getPendingJoinRequests(myTeam.id)
       : [];
 
@@ -128,16 +140,16 @@ export default async function EventDetailsPage({
     ? t("joinedProgress", { joined: event.participantCount, capacity })
     : t("joinedCount", { count: event.participantCount });
 
-  const isCaptain = isTournament && myTeam?.captainId === session?.user?.id;
-  const isMember = isTournament && myTeam && !isCaptain;
+  const isCaptain = isTeamEvent && myTeam?.captainId === session?.user?.id;
+  const isMember = isTeamEvent && myTeam && !isCaptain;
 
   const body = (
     <div className="mx-auto max-w-6xl px-4 py-8 md:px-8">
           <Link
-            href={isTournament ? "/tournaments" : "/events"}
+            href={isTeamEvent ? "/tournaments" : "/events"}
             className="mb-6 inline-flex text-sm font-semibold text-[#e21d12] hover:underline"
           >
-            {isTournament ? t("backToTournaments") : t("back")}
+            {isTeamEvent ? t("backToTournaments") : t("back")}
           </Link>
 
           {paymentSuccess && (
@@ -145,7 +157,7 @@ export default async function EventDetailsPage({
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
-              {isTournament ? t("tournamentPaymentSuccess") : t("paymentSuccess")}
+              {isTeamEvent ? t("tournamentPaymentSuccess") : t("paymentSuccess")}
             </div>
           )}
 
@@ -173,7 +185,7 @@ export default async function EventDetailsPage({
               ) : null}
             </div>
 
-            {isTournament ? (
+            {isTeamEvent ? (
               /* ── Tournament: sidebar layout matching regular events ── */
               (() => {
                 const activeTeams = teams.filter(tm => tm.status === "active").length;
@@ -439,16 +451,19 @@ export default async function EventDetailsPage({
             participants={participants}
             isSuperAdmin={isSuperAdmin}
             isOrganizer={isOrganizer}
-            hideTabs={isTournament ? ["participants"] : []}
-            desktopHideTabs={isTournament ? ["details"] : []}
-            initialTab={isTournament ? (isMobile ? "details" : "teams") : undefined}
-            tournamentTeams={isTournament ? teams : undefined}
+            hideTabs={[
+              ...(isTeamEvent ? (["participants"] as const) : []),
+              ...(hasSchedule ? [] : (["standings", "results"] as const)),
+            ]}
+            desktopHideTabs={isTeamEvent ? ["details"] : []}
+            initialTab={isTeamEvent ? (isMobile ? "details" : "teams") : undefined}
+            tournamentTeams={isTeamEvent ? teams : undefined}
             myTournamentTeamId={myTeam?.id}
             canRequestJoin={!!(session && !myTeam && !isEnded)}
             tournamentId={eventId}
-            games={isTournament ? games : undefined}
-            miniEvents={isTournament ? miniEvents : undefined}
-            tournamentPlayers={isTournament ? tournamentPlayers : undefined}
+            games={hasSchedule ? games : undefined}
+            miniEvents={hasSchedule ? miniEvents : undefined}
+            tournamentPlayers={hasSchedule ? tournamentPlayers : undefined}
           />
     </div>
   );

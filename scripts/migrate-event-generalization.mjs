@@ -11,9 +11,14 @@
 // required, not optional, or existing tournaments' team registration/tabs
 // silently break.
 //
-// Stage 4 will extend this same script with hasCompetitionSchedule/
-// recurrenceRule columns — kept as one script per the event-generalization
-// effort rather than proliferating one-off files.
+//
+// Stage 4 adds hasCompetitionSchedule (decouples "has a Schedule/Results/
+// Standings games structure" from registrationMode) and recurrenceRule
+// (nullable JSONB — "every Monday, Sept 21-Dec 7" instead of manually
+// adding N agendaItems). Existing eventType='Tournament' rows are
+// backfilled hasCompetitionSchedule=true so their tabs render identically
+// to today; recurrenceRule stays null for all existing rows (purely
+// additive, opt-in going forward).
 import { Pool } from "@neondatabase/serverless";
 import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
@@ -33,6 +38,13 @@ async function run(label, url) {
     `UPDATE "event" SET "registrationMode" = 'team' WHERE "eventType" = 'Tournament' AND "registrationMode" != 'team'`
   );
   console.log(`[${label}] ✓ backfilled registrationMode='team' on ${result.rowCount} existing Tournament event(s)`);
+
+  await pool.query(`ALTER TABLE "event" ADD COLUMN IF NOT EXISTS "hasCompetitionSchedule" boolean NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE "event" ADD COLUMN IF NOT EXISTS "recurrenceRule" JSONB`);
+  const scheduleResult = await pool.query(
+    `UPDATE "event" SET "hasCompetitionSchedule" = true WHERE "eventType" = 'Tournament' AND "hasCompetitionSchedule" = false`
+  );
+  console.log(`[${label}] ✓ hasCompetitionSchedule/recurrenceRule columns; backfilled hasCompetitionSchedule=true on ${scheduleResult.rowCount} existing Tournament event(s)`);
 
   await pool.end();
 }
