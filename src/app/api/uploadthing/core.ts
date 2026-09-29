@@ -26,6 +26,10 @@ export const ourFileRouter = {
     .middleware(() => ({}))
     .onUploadComplete(({ file }) => ({ url: file.ufsUrl })),
 
+  profileCover: f({ image: { maxFileSize: "16MB", maxFileCount: 1 } })
+    .middleware(() => ({}))
+    .onUploadComplete(({ file }) => ({ url: file.ufsUrl })),
+
   profileMedia: f({
     image: { maxFileSize: "16MB", maxFileCount: 10 },
     video: { maxFileSize: "64MB", maxFileCount: 10 },
@@ -49,6 +53,17 @@ export const ourFileRouter = {
     .onUploadComplete(({ file }) => ({ url: file.ufsUrl })),
 
   organizationPolicyDocument: f({ pdf: { maxFileSize: "8MB", maxFileCount: 1 } })
+    .middleware(() => ({}))
+    .onUploadComplete(({ file }) => ({ url: file.ufsUrl })),
+
+  partnerLogo: f({ image: { maxFileSize: "4MB", maxFileCount: 1 } })
+    .middleware(() => ({}))
+    .onUploadComplete(({ file }) => ({ url: file.ufsUrl })),
+
+  // Distinct from "teamLogo" above, which belongs to the pre-existing
+  // captain-owned "team" table (CreateTeamModal.tsx) — this one is for the
+  // new organization-owned "organization_team" rows (organizer-teams.ts).
+  organizationTeamLogo: f({ image: { maxFileSize: "4MB", maxFileCount: 1 } })
     .middleware(() => ({}))
     .onUploadComplete(({ file }) => ({ url: file.ufsUrl })),
 } satisfies FileRouter;

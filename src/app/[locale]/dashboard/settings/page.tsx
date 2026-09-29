@@ -1,8 +1,8 @@
 // /dashboard/settings: profile-name and change-password forms. Note these
 // forms are not wired to any server action yet (no onSubmit/action, no
 // updateUserProfile call) — they render pre-filled but "Save" currently
-// does nothing. Real profile editing lives on /dashboard/profile
-// (ProfileEditor).
+// does nothing. Real profile editing lives on the merged /athletes/[userId]
+// page (/dashboard/profile just redirects there).
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { getTranslations } from "next-intl/server";

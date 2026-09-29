@@ -1,16 +1,10 @@
 "use client";
 
 // Plain sign-out button, redirects to /auth/signin after.
-import { signOut } from "@/lib/auth-client";
-import { useRouter } from "@/i18n/routing";
+import { useSignOut } from "@/lib/use-sign-out";
 
 export default function SignOutButton({ label }: { label: string }) {
-  const router = useRouter();
-
-  async function handleSignOut() {
-    await signOut();
-    router.push("/auth/signin");
-  }
+  const handleSignOut = useSignOut();
 
   return (
     <button

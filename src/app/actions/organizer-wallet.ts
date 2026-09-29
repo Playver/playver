@@ -94,8 +94,8 @@ export async function getOrganizationWalletOverview() {
 }
 
 // Powers the embedded Connect onboarding panel (ConnectPayoutOnboarding),
-// rendered inline on /organizer/payments and in the org creation wizard's
-// Step9Payments — instead of redirecting to Stripe's hosted
+// rendered inline on /organizer/payments and on the organizer Settings
+// page's payout section — instead of redirecting to Stripe's hosted
 // connect.stripe.com onboarding page. Same underlying Express account and
 // KYC requirements as before, just rendered in Playver's own UI. The client
 // calls this every time it needs a fresh client_secret (account sessions

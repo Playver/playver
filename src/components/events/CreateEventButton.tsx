@@ -22,10 +22,15 @@ export default function CreateEventButton({
   label,
   icon,
   className,
+  renderTrigger,
 }: {
   label: string;
   icon?: React.ReactNode;
   className?: string;
+  // Lets a caller (e.g. CreateChooserModal) render its own trigger element
+  // instead of the default button, while still reusing this component's
+  // org-check + form-modal flow below.
+  renderTrigger?: (onClick: () => void, disabled: boolean) => React.ReactNode;
 }) {
   const [view, setView] = useState<View>("closed");
   const [toastKey, setToastKey] = useState(0);
@@ -66,22 +71,26 @@ export default function CreateEventButton({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={handleClick}
-        disabled={view === "checking"}
-        className={
-          className ??
-          "px-5 py-2.5 text-sm font-semibold text-white rounded-lg bg-[#e21d12] hover:bg-[#d41810] transition-colors shadow-sm disabled:opacity-60"
-        }
-      >
-        {view === "checking" ? "..." : (
-          <>
-            {icon}
-            {label}
-          </>
-        )}
-      </button>
+      {renderTrigger ? (
+        renderTrigger(handleClick, view === "checking")
+      ) : (
+        <button
+          type="button"
+          onClick={handleClick}
+          disabled={view === "checking"}
+          className={
+            className ??
+            "px-5 py-2.5 text-sm font-semibold text-white rounded-lg bg-[#e21d12] hover:bg-[#d41810] transition-colors shadow-sm disabled:opacity-60"
+          }
+        >
+          {view === "checking" ? "..." : (
+            <>
+              {icon}
+              {label}
+            </>
+          )}
+        </button>
+      )}
 
       {view === "noOrg" && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

@@ -1,13 +1,30 @@
 "use client";
 
-// Wizard step 7 of 10: toggles which optional modules (posts, programs,
-// etc.) the org has enabled — see src/lib/organization-modules.ts for the
-// canonical module list and which ones are always-on.
+// Modules toggle-card list — originally wizard step 7 of 10, now reused by
+// the new 4-step wizard's Step2Manage.tsx (which passes `visibleKeys` to
+// restrict the list to Events/Teams/Partners and overrides the step-label/
+// title/subtitle) rather than forking this component. See
+// src/lib/organization-modules.ts for the canonical module list and which
+// ones are always-on.
 import { useTranslations } from "next-intl";
-import { ORGANIZATION_MODULES } from "@/lib/organization-modules";
+import { ORGANIZATION_MODULES, type OrganizationModuleKey } from "@/lib/organization-modules";
 import type { StepProps } from "./types";
 
-export default function Step7Modules({ state, update }: StepProps) {
+export default function Step7Modules({
+  state,
+  update,
+  visibleKeys,
+  stepCurrent = 7,
+  stepTotal = 10,
+  titleKey = "wizardModulesTitle",
+  subtitleKey = "wizardModulesSubtitle",
+}: StepProps & {
+  visibleKeys?: OrganizationModuleKey[];
+  stepCurrent?: number;
+  stepTotal?: number;
+  titleKey?: string;
+  subtitleKey?: string;
+}) {
   const t = useTranslations("Organizer");
 
   function toggle(key: string, alwaysOn?: boolean) {
@@ -19,18 +36,22 @@ export default function Step7Modules({ state, update }: StepProps) {
     });
   }
 
+  const modules = visibleKeys
+    ? ORGANIZATION_MODULES.filter((m) => visibleKeys.includes(m.key))
+    : ORGANIZATION_MODULES;
+
   return (
     <div>
       <p className="text-xs font-bold tracking-wide uppercase text-[#e21d12] mb-2">
-        {t("wizardStepLabel", { current: 7, total: 10 })}
+        {t("wizardStepLabel", { current: stepCurrent, total: stepTotal })}
       </p>
       <h2 className="text-2xl font-extrabold text-zinc-900 mb-2" style={{ fontFamily: "var(--font-playfair)" }}>
-        {t("wizardModulesTitle")}
+        {t(titleKey)}
       </h2>
-      <p className="text-sm text-zinc-500 mb-8 max-w-md">{t("wizardModulesSubtitle")}</p>
+      <p className="text-sm text-zinc-500 mb-8 max-w-md">{t(subtitleKey)}</p>
 
       <div className="flex flex-col gap-3 max-w-xl">
-        {ORGANIZATION_MODULES.map(({ key, alwaysOn, recommended }) => {
+        {modules.map(({ key, alwaysOn, recommended }) => {
           const enabled = alwaysOn || state.enabledModules.includes(key);
           return (
             <button

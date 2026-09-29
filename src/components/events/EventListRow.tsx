@@ -15,12 +15,18 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+function isSameCalendarDate(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
 export default function EventListRow({
   event,
   freeLabel,
   endedLabel,
   joinedLabel,
   organizerLabel,
+  todayLabel,
+  tomorrowLabel,
   href,
   onViewed,
 }: {
@@ -29,11 +35,19 @@ export default function EventListRow({
   endedLabel: string;
   joinedLabel: string;
   organizerLabel: string;
+  todayLabel?: string;
+  tomorrowLabel?: string;
   href: string;
   onViewed?: (event: EventItem) => void;
 }) {
   const isEnded = new Date(event.endDateTime) < new Date();
   const isCancelled = event.status === "cancelled";
+  const now = new Date();
+  const tomorrowDate = new Date(now);
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const startDate = new Date(event.startDateTime);
+  const isToday = isSameCalendarDate(startDate, now);
+  const isTomorrow = isSameCalendarDate(startDate, tomorrowDate);
   const cover = event.coverImageUrl;
 
   return (
@@ -61,6 +75,10 @@ export default function EventListRow({
             <span className="text-[11px] font-extrabold uppercase tracking-wide text-[#e21d12]">{endedLabel}</span>
           ) : isEnded ? (
             <span className="text-[11px] font-extrabold uppercase tracking-wide text-zinc-400">{endedLabel}</span>
+          ) : isToday && todayLabel ? (
+            <span className="text-[11px] font-extrabold uppercase tracking-wide text-zinc-900">{todayLabel}</span>
+          ) : isTomorrow && tomorrowLabel ? (
+            <span className="text-[11px] font-extrabold uppercase tracking-wide text-zinc-500">{tomorrowLabel}</span>
           ) : null}
         </div>
         <p className="truncate text-base font-extrabold text-zinc-950">{event.title}</p>

@@ -261,3 +261,118 @@ async function getTournamentRegistrants(
   }
   return rows;
 }
+
+// --- Org-wide payments ledger (/organizer/payment-records) ---------------
+//
+// Two structurally different payment tables exist (see ARCHITECTURE.md §8 +
+// event.ts's payment-completion functions):
+//
+// - "event_payment" (individual event signups): id, eventId, userId,
+//   stripeSessionId, amount, currency, status, method, refundedAt,
+//   createdAt. `status` is only ever 'completed' or 'refunded' in real data —
+//   a row is inserted only in the Stripe webhook / wallet-debit path on
+//   success, never on an abandoned/failed checkout, so 'pending'/'failed'
+//   never occur here despite the column's legacy 'pending' default.
+//   `method` is 'wallet' or 'stripe_direct' (or the historical 'stripe').
+//
+// - "tournament_team_payment" (team registrations): id, teamId, userId,
+//   amount, createdAt, refundedAt. No status/currency/method/
+//   stripeSessionId columns at all — refund state is purely
+//   refundedAt IS NULL (active) vs IS NOT NULL (refunded).
+//
+// This normalizes both into one PaymentRecord shape. "Program" is
+// deliberately not a type here — Programs has no payment data anywhere in
+// this schema.
+
+export type PaymentType = "event" | "team";
+export type PaymentStatus = "paid" | "refunded";
+
+export type PaymentRecord = {
+  id: string;
+  personName: string;
+  // null means "redacted" (viewer lacks VIEW_SENSITIVE_PARTICIPANT_DATA),
+  // same convention as RegistrantRow.email above — never "unknown".
+  personEmail: string | null;
+  personImage: string | null;
+  activityName: string;
+  type: PaymentType;
+  amountCents: number;
+  status: PaymentStatus;
+  paymentDate: string;
+  // Real "method" column value ('wallet' | 'stripe_direct' | legacy
+  // 'stripe') for event payments. tournament_team_payment has no method
+  // column at all, so team rows are always null — never fabricated (no fake
+  // "Visa ••••4242" card brand; that data isn't stored anywhere).
+  method: string | null;
+  // Real Stripe Checkout Session id — only ever present for an event
+  // payment actually paid by card. Wallet payments and all team payments
+  // have none.
+  stripeSessionId: string | null;
+  eventId: string;
+  userId: string;
+  // Only ever true for an unrefunded event_payment row. Tournament team
+  // payments can only be refunded by cancelling the tournament (see
+  // refundEventParticipant's explicit rejection in event.ts), so they're
+  // never refundable from this ledger.
+  refundable: boolean;
+};
+
+export type OrganizationPayments = {
+  payments: PaymentRecord[];
+  canViewContactInfo: boolean;
+  canIssueRefunds: boolean;
+};
+
+export async function getOrganizationPayments(): Promise<OrganizationPayments> {
+  const { organization, role } = await requireOrganizationPermission("VIEW_PAYMENTS");
+  await ensureTournamentTables();
+
+  const canViewContactInfo = hasPermission(role, "VIEW_SENSITIVE_PARTICIPANT_DATA");
+  const canIssueRefunds = hasPermission(role, "ISSUE_REFUNDS");
+
+  const result = await pool.query(
+    `SELECT ep.id AS id, u.name AS "personName", u.email AS "personEmail", u.image AS "personImage",
+       e.title AS "activityName", 'event' AS type, ep.amount AS "amountCents", ep.status AS status,
+       ep."createdAt" AS "paymentDate", ep.method AS method, ep."stripeSessionId" AS "stripeSessionId",
+       ep."eventId" AS "eventId", ep."userId" AS "userId"
+     FROM "event_payment" ep
+     JOIN "event" e ON e.id = ep."eventId"
+     JOIN "user" u ON u.id = ep."userId"
+     WHERE e."organizationId" = $1
+
+     UNION ALL
+
+     SELECT ttp.id, u.name, u.email, u.image,
+       e.title, 'team', ttp.amount,
+       CASE WHEN ttp."refundedAt" IS NOT NULL THEN 'refunded' ELSE 'completed' END,
+       ttp."createdAt", NULL::text, NULL::text,
+       tt."tournamentId", ttp."userId"
+     FROM "tournament_team_payment" ttp
+     JOIN "tournament_team" tt ON tt.id = ttp."teamId"
+     JOIN "event" e ON e.id = tt."tournamentId"
+     JOIN "user" u ON u.id = ttp."userId"
+     WHERE e."organizationId" = $1
+
+     ORDER BY "paymentDate" DESC`,
+    [organization.id]
+  );
+
+  const payments: PaymentRecord[] = result.rows.map((row) => ({
+    id: row.id,
+    personName: row.personName,
+    personEmail: canViewContactInfo ? row.personEmail : null,
+    personImage: row.personImage,
+    activityName: row.activityName,
+    type: row.type as PaymentType,
+    amountCents: Number(row.amountCents),
+    status: row.status === "refunded" ? "refunded" : "paid",
+    paymentDate: new Date(row.paymentDate).toISOString(),
+    method: row.method,
+    stripeSessionId: row.stripeSessionId,
+    eventId: row.eventId,
+    userId: row.userId,
+    refundable: row.type === "event" && row.status === "completed",
+  }));
+
+  return { payments, canViewContactInfo, canIssueRefunds };
+}

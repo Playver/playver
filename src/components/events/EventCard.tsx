@@ -40,6 +40,10 @@ function LocationIcon() {
   );
 }
 
+function isSameCalendarDate(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
 export default function EventCard({
   event,
   freeLabel,
@@ -47,9 +51,13 @@ export default function EventCard({
   cancelledLabel,
   joinedLabel,
   organizerLabel,
+  todayLabel,
+  tomorrowLabel,
   onViewed,
   href,
   action,
+  ctaLabel,
+  ctaHref,
 }: {
   event: EventItem;
   freeLabel: string;
@@ -57,12 +65,25 @@ export default function EventCard({
   cancelledLabel?: string;
   joinedLabel: string;
   organizerLabel: string;
+  todayLabel?: string;
+  tomorrowLabel?: string;
   onViewed?: (event: EventItem) => void;
   href?: string;
   action?: React.ReactNode;
+  // Optional footer CTA (e.g. "RSVP"/"Register" on the homepage's compact
+  // event grid) — a plain link to the event detail page, not a new inline
+  // join control. Omitted by every other existing caller of EventCard.
+  ctaLabel?: string;
+  ctaHref?: string;
 }) {
   const isEnded = new Date(event.endDateTime) < new Date();
   const isCancelled = event.status === "cancelled";
+  const now = new Date();
+  const tomorrowDate = new Date(now);
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const startDate = new Date(event.startDateTime);
+  const isToday = isSameCalendarDate(startDate, now);
+  const isTomorrow = isSameCalendarDate(startDate, tomorrowDate);
   const capacity = event.capacity ?? 0;
   const progress = capacity > 0 ? Math.min((event.participantCount / capacity) * 100, 100) : 0;
   const cover = event.coverImageUrl;
@@ -85,6 +106,14 @@ export default function EventCard({
       ) : isEnded ? (
         <div className="absolute bottom-5 right-5 rounded-full border-2 border-red-300 bg-[#e21d12] px-4 py-2 text-xs font-extrabold uppercase tracking-wide text-white shadow-md">
           {endedLabel}
+        </div>
+      ) : isToday && todayLabel ? (
+        <div className="absolute bottom-5 right-5 rounded-full border-2 border-zinc-700 bg-zinc-900 px-4 py-2 text-xs font-extrabold uppercase tracking-wide text-white shadow-md">
+          {todayLabel}
+        </div>
+      ) : isTomorrow && tomorrowLabel ? (
+        <div className="absolute bottom-5 right-5 rounded-full border-2 border-zinc-300 bg-white px-4 py-2 text-xs font-extrabold uppercase tracking-wide text-zinc-700 shadow-md">
+          {tomorrowLabel}
         </div>
       ) : null}
     </>
@@ -150,6 +179,15 @@ export default function EventCard({
             </div>
           </div>
         </div>
+
+        {ctaLabel && ctaHref && (
+          <Link
+            href={ctaHref}
+            className="mt-4 inline-flex items-center justify-center rounded-xl bg-[#e21d12] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#c31710]"
+          >
+            {ctaLabel}
+          </Link>
+        )}
       </div>
     </article>
   );

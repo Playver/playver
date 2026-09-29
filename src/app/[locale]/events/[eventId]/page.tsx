@@ -9,6 +9,7 @@ import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
+import LoggedInPageShell from "@/components/layout/LoggedInPageShell";
 import EventJoinButton from "@/components/events/EventJoinButton";
 import EventDetailsTabs from "@/components/events/EventDetailsTabs";
 import AdminDeleteEventButton from "@/components/events/AdminDeleteEventButton";
@@ -17,6 +18,7 @@ import AdminAddParticipant from "@/components/events/AdminAddParticipant";
 import { Link } from "@/i18n/routing";
 import { auth } from "@/lib/auth";
 import { getEventById, getEventParticipants, getEventParticipationMap, getEventFormFields } from "@/app/actions/event";
+import { getUserOrganizations } from "@/app/actions/organization";
 import { canManageOrgEvent } from "@/app/actions/organizer-events";
 import { getTournamentTeams, getMyTournamentTeam, getPendingJoinRequests, getMyTeamOptions } from "@/app/actions/tournament";
 import { getGamesForEvent } from "@/app/actions/game";
@@ -124,11 +126,8 @@ export default async function EventDetailsPage({
   const isCaptain = isTournament && myTeam?.captainId === session?.user?.id;
   const isMember = isTournament && myTeam && !isCaptain;
 
-  return (
-    <>
-      <Navbar />
-      <main className="flex-1 bg-white pb-20 lg:pb-0">
-        <div className="mx-auto max-w-6xl px-4 py-8 md:px-8">
+  const body = (
+    <div className="mx-auto max-w-6xl px-4 py-8 md:px-8">
           <Link
             href={isTournament ? "/tournaments" : "/events"}
             className="mb-6 inline-flex text-sm font-semibold text-[#e21d12] hover:underline"
@@ -443,8 +442,26 @@ export default async function EventDetailsPage({
             miniEvents={isTournament ? miniEvents : undefined}
             tournamentPlayers={isTournament ? tournamentPlayers : undefined}
           />
-        </div>
-      </main>
+    </div>
+  );
+
+  if (session) {
+    const viewerOrganizations = await getUserOrganizations();
+    const viewerHasOrganization = viewerOrganizations.some((org) => org.publicationStatus === "published");
+    return (
+      <LoggedInPageShell
+        user={{ id: session.user.id, name: session.user.name ?? "", email: session.user.email ?? "", image: session.user.image ?? null }}
+        hasOrganization={viewerHasOrganization}
+      >
+        {body}
+      </LoggedInPageShell>
+    );
+  }
+
+  return (
+    <>
+      <Navbar />
+      <main className="flex-1 bg-white pb-20 lg:pb-0">{body}</main>
       <Footer />
     </>
   );

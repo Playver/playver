@@ -17,13 +17,18 @@ export type OrganizationModuleDefinition = {
   recommended?: boolean;
 };
 
+// Events/Teams/People/Opportunities are `alwaysOn` (not just "recommended") as
+// of the Stage C org-dashboard nav reorg — OrganizerSidebar.tsx renders them
+// unconditionally rather than gating on enabledModules, matching how they
+// were (accidentally) always shown pre-reorg regardless of this array. Only
+// Partners (and, later, Memberships) are real opt-in modules today.
 export const ORGANIZATION_MODULES: OrganizationModuleDefinition[] = [
   { key: "posts", alwaysOn: true },
   { key: "programs", recommended: true },
-  { key: "teams", recommended: true },
-  { key: "events", recommended: true },
-  { key: "people", recommended: true },
-  { key: "opportunities" },
+  { key: "teams", alwaysOn: true },
+  { key: "events", alwaysOn: true },
+  { key: "people", alwaysOn: true },
+  { key: "opportunities", alwaysOn: true },
   { key: "partners" },
   { key: "memberships" },
 ];
