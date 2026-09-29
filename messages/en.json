@@ -295,7 +295,7 @@
     "organizedBy": "Organized by"
   },
   "EventDetails": {
-    "back": "Back to Events",
+    "back": "Back",
     "free": "FREE",
     "eventEnded": "Event has ended",
     "eventCancelled": "Cancelled",
@@ -422,7 +422,6 @@
     "standingsDiff": "DIFF",
     "noStandings": "No standings yet",
     "noStandingsHint": "Standings will appear here once teams register.",
-    "backToTournaments": "← Back to Tournaments",
     "tournamentBadge": "Tournament · {sport}",
     "youreOrganizer": "You're the organizer",
     "youreSuperAdmin": "You're a super admin",

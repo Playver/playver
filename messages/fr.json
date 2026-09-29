@@ -295,7 +295,7 @@
     "organizedBy": "Organisé par"
   },
   "EventDetails": {
-    "back": "Retour aux événements",
+    "back": "Retour",
     "free": "GRATUIT",
     "eventEnded": "Événement terminé",
     "eventCancelled": "Annulé",
@@ -422,7 +422,6 @@
     "standingsDiff": "DIFF",
     "noStandings": "Aucun classement pour l'instant",
     "noStandingsHint": "Le classement apparaîtra ici une fois les équipes inscrites.",
-    "backToTournaments": "← Retour aux tournois",
     "tournamentBadge": "Tournoi · {sport}",
     "youreOrganizer": "Vous êtes l'organisateur",
     "youreSuperAdmin": "Vous êtes super administrateur",

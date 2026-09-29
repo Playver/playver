@@ -16,6 +16,7 @@ import AdminDeleteEventButton from "@/components/events/AdminDeleteEventButton";
 import EventCancelPostponeButton from "@/components/events/EventCancelPostponeButton";
 import AdminAddParticipant from "@/components/events/AdminAddParticipant";
 import { Link } from "@/i18n/routing";
+import BackButton from "@/components/layout/BackButton";
 import { auth } from "@/lib/auth";
 import { getEventById, getEventParticipants, getEventParticipationMap, getEventFormFields, getEventCategories, getEventPricingTiers } from "@/app/actions/event";
 import { getUserOrganizations } from "@/app/actions/organization";
@@ -145,12 +146,7 @@ export default async function EventDetailsPage({
 
   const body = (
     <div className="mx-auto max-w-6xl px-4 py-8 md:px-8">
-          <Link
-            href={isTeamEvent ? "/tournaments" : "/events"}
-            className="mb-6 inline-flex text-sm font-semibold text-[#e21d12] hover:underline"
-          >
-            {isTeamEvent ? t("backToTournaments") : t("back")}
-          </Link>
+          <BackButton label={t("back")} fallbackHref={isTeamEvent ? "/tournaments" : "/events"} />
 
           {paymentSuccess && (
             <div className="mb-6 flex items-center gap-3 rounded-xl bg-emerald-50 border border-emerald-200 px-5 py-4 text-sm font-semibold text-emerald-700">
