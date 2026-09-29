@@ -1,12 +1,13 @@
 "use client";
 
-import { useRouter } from "@/i18n/routing";
 import CreateEventForm from "@/components/events/CreateEventForm";
 import type { EventItem, FormField, EventCategory, EventPricingTier } from "@/app/actions/event";
 
-// Thin wrapper so the (server-component) organizer manage page can keep the
-// organizer on /organizer/events/[eventId] after a save, instead of
-// CreateEventForm's default post-edit redirect to the public event page.
+// Thin wrapper around CreateEventForm for the organizer console's edit page.
+// No onSuccess override here — CreateEventForm's own default (redirect to
+// the public event page after saving) is what we want; /organizer/events/
+// [eventId] is edit-form-only, so redirecting back to it after a save just
+// looked like the save did nothing.
 export default function OrganizerEventEditForm({
   event,
   formFields,
@@ -18,7 +19,6 @@ export default function OrganizerEventEditForm({
   categories: EventCategory[];
   pricingTiers: EventPricingTier[];
 }) {
-  const router = useRouter();
   return (
     <CreateEventForm
       initialData={event}
@@ -26,7 +26,6 @@ export default function OrganizerEventEditForm({
       initialCategories={categories}
       initialPricingTiers={pricingTiers}
       eventId={event.id}
-      onSuccess={() => router.push(`/organizer/events/${event.id}` as Parameters<typeof router.push>[0])}
     />
   );
 }
