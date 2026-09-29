@@ -13,7 +13,7 @@ import Image from "next/image";
 import { useRouter } from "@/i18n/routing";
 import { createEvent, updateEvent } from "@/app/actions/event";
 import { useUploadThing } from "@/lib/uploadthing";
-import type { FormFieldType, EventItem, FormField, GalleryItem, AgendaItem, EventCategory } from "@/app/actions/event";
+import type { FormFieldType, EventItem, FormField, GalleryItem, AgendaItem, EventCategory, EventPricingTier } from "@/app/actions/event";
 
 function splitDateTime(iso: string) {
   const d = new Date(iso);
@@ -98,17 +98,25 @@ type AgendaItemDraft = {
   description: string;
 };
 
-// startTime/endTime (age-tiered session slots for individual/recurring
-// events) are added in Stage 3, alongside the individual-registration
-// category picker that would actually use them — Stage 2 only wires
-// categories into team registration (divisions), so exposing time-slot
-// fields here now would be UI for a feature not yet usable.
+// startTime/endTime are age-tiered session slots for individual events
+// (e.g. karate's two time slots) — only shown/meaningful when
+// registrationMode === "individual"; team events use capacity/
+// maxPlayersPerTeam instead.
 type CategoryDraft = {
   id: string;
   name: string;
   description: string;
   capacity: string;
   maxPlayersPerTeam: string;
+  price: string;
+  startTime: string;
+  endTime: string;
+};
+
+// Resident/non-resident-style price variants, orthogonal to category.
+type TierDraft = {
+  id: string;
+  label: string;
   price: string;
 };
 
@@ -451,6 +459,27 @@ function CategoryBuilder({
           </div>
         )}
       </div>
+      {!isTeamEvent && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-zinc-600">{t("categoryStartTime")}</label>
+            <TimeSelect
+              value={category.startTime}
+              onChange={v => onChange({ startTime: v, endTime: "" })}
+              className={`${inputClass} appearance-none`}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-zinc-600">{t("categoryEndTime")}</label>
+            <TimeSelect
+              value={category.endTime}
+              onChange={v => onChange({ endTime: v })}
+              minValue={category.startTime || undefined}
+              className={`${inputClass} appearance-none`}
+            />
+          </div>
+        </div>
+      )}
       {isPaid && (
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold text-zinc-600">{t("categoryPrice")}</label>
@@ -471,12 +500,69 @@ function CategoryBuilder({
   );
 }
 
+function TierBuilder({
+  tier,
+  index,
+  t,
+  inputClass,
+  onChange,
+  onRemove,
+}: {
+  tier: TierDraft;
+  index: number;
+  t: ReturnType<typeof useTranslations>;
+  inputClass: string;
+  onChange: (updates: Partial<TierDraft>) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold text-zinc-400 uppercase tracking-wide">
+          {t("tier")} {index + 1}
+        </span>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="text-xs font-semibold text-zinc-400 hover:text-red-500 transition-colors"
+        >
+          {t("tierRemove")}
+        </button>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-semibold text-zinc-600">{t("tierLabel")}</label>
+        <input
+          type="text"
+          value={tier.label}
+          onChange={e => onChange({ label: e.target.value })}
+          placeholder={t("tierLabelPlaceholder")}
+          className={inputClass}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-semibold text-zinc-600">{t("tierPrice")}</label>
+        <div className="relative">
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 font-semibold text-sm">$</span>
+          <input
+            type="number" min="0.50" step="0.01"
+            value={tier.price}
+            onChange={e => onChange({ price: e.target.value })}
+            placeholder={t("tierPricePlaceholder")}
+            className={`${inputClass} pl-8`}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CreateEventForm({
   onSuccess,
   onCancel,
   initialData,
   initialFormFields,
   initialCategories,
+  initialPricingTiers,
   eventId,
 }: {
   onSuccess?: () => void;
@@ -484,6 +570,7 @@ export default function CreateEventForm({
   initialData?: EventItem;
   initialFormFields?: FormField[];
   initialCategories?: EventCategory[];
+  initialPricingTiers?: EventPricingTier[];
   eventId?: string;
 }) {
   const t = useTranslations("CreateEvent");
@@ -531,7 +618,7 @@ export default function CreateEventForm({
     })) ?? []
   );
 
-  // Categories (divisions for team events; Stage 3 adds age-tiered slots)
+  // Categories (divisions for team events; age-tiered slots for individual events)
   const [categories, setCategories] = useState<CategoryDraft[]>(
     initialCategories?.map(c => ({
       id: crypto.randomUUID(),
@@ -540,6 +627,17 @@ export default function CreateEventForm({
       capacity: c.capacity != null ? String(c.capacity) : "",
       maxPlayersPerTeam: c.maxPlayersPerTeam != null ? String(c.maxPlayersPerTeam) : "",
       price: c.price != null ? String(c.price / 100) : "",
+      startTime: c.startTime ?? "",
+      endTime: c.endTime ?? "",
+    })) ?? []
+  );
+
+  // Pricing tiers (resident/non-resident-style variants, orthogonal to category)
+  const [pricingTiers, setPricingTiers] = useState<TierDraft[]>(
+    initialPricingTiers?.map(tier => ({
+      id: crypto.randomUUID(),
+      label: tier.label,
+      price: String(tier.price / 100),
     })) ?? []
   );
 
@@ -632,7 +730,7 @@ export default function CreateEventForm({
   function addCategory() {
     setCategories(prev => [
       ...prev,
-      { id: crypto.randomUUID(), name: "", description: "", capacity: "", maxPlayersPerTeam: "", price: "" },
+      { id: crypto.randomUUID(), name: "", description: "", capacity: "", maxPlayersPerTeam: "", price: "", startTime: "", endTime: "" },
     ]);
   }
 
@@ -642,6 +740,18 @@ export default function CreateEventForm({
 
   function removeCategory(id: string) {
     setCategories(prev => prev.filter(c => c.id !== id));
+  }
+
+  function addTier() {
+    setPricingTiers(prev => [...prev, { id: crypto.randomUUID(), label: "", price: "" }]);
+  }
+
+  function updateTier(id: string, updates: Partial<TierDraft>) {
+    setPricingTiers(prev => prev.map(tr => tr.id === id ? { ...tr, ...updates } : tr));
+  }
+
+  function removeTier(id: string) {
+    setPricingTiers(prev => prev.filter(tr => tr.id !== id));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -735,6 +845,15 @@ export default function CreateEventForm({
           capacity: c.capacity ? parseInt(c.capacity) : undefined,
           maxPlayersPerTeam: registrationMode === "team" && c.maxPlayersPerTeam ? parseInt(c.maxPlayersPerTeam) : undefined,
           price: isPaid && c.price ? Math.round(parseFloat(c.price) * 100) : undefined,
+          startTime: registrationMode === "individual" && c.startTime ? c.startTime : undefined,
+          endTime: registrationMode === "individual" && c.endTime ? c.endTime : undefined,
+          sortOrder: i,
+        })),
+      pricingTiers: pricingTiers
+        .filter(tr => tr.label.trim() && tr.price)
+        .map((tr, i) => ({
+          label: tr.label.trim(),
+          price: Math.round(parseFloat(tr.price) * 100),
           sortOrder: i,
         })),
     };
@@ -1041,9 +1160,9 @@ export default function CreateEventForm({
         )}
       </Section>
 
-      {/* Categories — divisions for team events (e.g. tournament pools);
-          Stage 3 also wires these into individual-registration events as
-          age-tiered session slots. Optional: zero categories means this
+      {/* Categories — divisions for team events (e.g. tournament pools) or
+          age-tiered session slots for individual events (e.g. a karate
+          class's two time slots). Optional: zero categories means this
           event behaves exactly as before. */}
       <Section title={t("sectionCategories")}>
         <p className="text-xs text-zinc-400 -mt-2">{t("sectionCategoriesHint")}</p>
@@ -1073,6 +1192,39 @@ export default function CreateEventForm({
           </button>
         </div>
       </Section>
+
+      {/* Pricing tiers — resident/non-resident-style price variants a
+          registrant picks regardless of category. Only relevant for paid
+          events; a category's own price override (above) always wins over
+          a tier if both are set on the same registration. */}
+      {isPaid && (
+        <Section title={t("sectionPricingTiers")}>
+          <p className="text-xs text-zinc-400 -mt-2">{t("sectionPricingTiersHint")}</p>
+          <div className="flex flex-col gap-3">
+            {pricingTiers.map((tier, index) => (
+              <TierBuilder
+                key={tier.id}
+                tier={tier}
+                index={index}
+                t={t}
+                inputClass={inputClass}
+                onChange={updates => updateTier(tier.id, updates)}
+                onRemove={() => removeTier(tier.id)}
+              />
+            ))}
+            <button
+              type="button"
+              onClick={addTier}
+              className="flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-zinc-200 hover:border-[#e21d12] hover:text-[#e21d12] text-zinc-400 text-sm font-semibold transition-colors"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              {t("tierAdd")}
+            </button>
+          </div>
+        </Section>
+      )}
 
       {/* Agenda */}
       <Section title={t("sectionAgenda")}>

@@ -33,7 +33,7 @@ import { requireOrganizationPermission } from "./organization";
 import { hasPermission, type OrgRole } from "@/lib/organizer-permissions";
 import { serializeEvent } from "@/lib/serialize-event";
 import { isTeamEvent } from "@/lib/event-type";
-import { ensureEventRegistrationTables } from "@/lib/event-registration-tables";
+import { ensureEventRegistrationTables, resolveRegistrationPrice } from "@/lib/event-registration-tables";
 
 let eventParticipantsTablePromise: Promise<void> | null = null;
 
@@ -137,6 +137,16 @@ export type EventCategory = {
   sortOrder: number;
 };
 
+// Resident/non-resident-style price variants, orthogonal to category — see
+// resolveRegistrationPrice in event-registration-tables.ts for precedence.
+export type EventPricingTier = {
+  id: string;
+  eventId: string;
+  label: string;
+  price: number;
+  sortOrder: number;
+};
+
 export type EventItem = ReturnType<typeof serializeEvent>;
 // Public-facing shape only — deliberately excludes email. This is rendered on
 // the public event page, which any visitor (including logged-out ones) can
@@ -219,6 +229,11 @@ export async function createEvent(data: {
     endTime?: string;
     sortOrder: number;
   }>;
+  pricingTiers?: Array<{
+    label: string;
+    price: number;
+    sortOrder: number;
+  }>;
 }) {
   // Event creation requires an active organization — every event is now
   // organization-owned. Legacy events with organizationId null predate this
@@ -270,6 +285,16 @@ export async function createEvent(data: {
         `INSERT INTO "event_category" (id, "eventId", name, description, capacity, "maxPlayersPerTeam", price, "startTime", "endTime", "sortOrder")
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [crypto.randomUUID(), id, category.name, category.description ?? null, category.capacity ?? null, category.maxPlayersPerTeam ?? null, category.price ?? null, category.startTime ?? null, category.endTime ?? null, category.sortOrder]
+      );
+    }
+  }
+
+  if (data.pricingTiers?.length) {
+    for (const tier of data.pricingTiers) {
+      await pool.query(
+        `INSERT INTO "event_pricing_tier" (id, "eventId", label, price, "sortOrder")
+         VALUES ($1, $2, $3, $4, $5)`,
+        [crypto.randomUUID(), id, tier.label, tier.price, tier.sortOrder]
       );
     }
   }
@@ -611,7 +636,42 @@ async function fireJoinEmails(
   }
 }
 
-export async function joinEvent(eventId: string): Promise<{ error?: string }> {
+// Shared by joinEvent/payForEventWithWallet/joinEventWithForm — validates an
+// optional category/tier selection against what the event actually has
+// configured (mirrors tournament.ts's checkCanRegister for team events).
+// Categories/tiers are optional per event: a registrant only has to pick one
+// when the event actually defines any. Per-category capacity isn't enforced
+// here yet (event-level capacity already is) — a smaller scope than the
+// team-registration path, left as a known simplification for now.
+async function resolveJoinSelection(
+  eventId: string,
+  categoryId?: string,
+  pricingTierId?: string
+): Promise<{ error?: string; category?: { price: number | null } | null; tier?: { price: number } | null }> {
+  await ensureEventRegistrationTables();
+  const [categoriesRes, tiersRes] = await Promise.all([
+    pool.query(`SELECT id, price FROM "event_category" WHERE "eventId" = $1`, [eventId]),
+    pool.query(`SELECT id, price FROM "event_pricing_tier" WHERE "eventId" = $1`, [eventId]),
+  ]);
+
+  let category: { id: string; price: number | null } | null = null;
+  if (categoriesRes.rows.length > 0) {
+    if (!categoryId) return { error: "Please select a category" };
+    category = categoriesRes.rows.find((c) => c.id === categoryId) ?? null;
+    if (!category) return { error: "Invalid category" };
+  }
+
+  let tier: { id: string; price: number } | null = null;
+  if (tiersRes.rows.length > 0) {
+    if (!pricingTierId) return { error: "Please select a pricing option" };
+    tier = tiersRes.rows.find((t) => t.id === pricingTierId) ?? null;
+    if (!tier) return { error: "Invalid pricing option" };
+  }
+
+  return { category, tier };
+}
+
+export async function joinEvent(eventId: string, categoryId?: string, pricingTierId?: string): Promise<{ error?: string }> {
   try {
     const session = await auth.api.getSession({ headers: await headers() });
     if (!session) return { error: "Unauthorized" };
@@ -635,11 +695,14 @@ export async function joinEvent(eventId: string): Promise<{ error?: string }> {
       }
     }
 
+    const selection = await resolveJoinSelection(eventId, categoryId, pricingTierId);
+    if (selection.error) return { error: selection.error };
+
     await pool.query(
-      `INSERT INTO "event_participant" (id, "eventId", "userId")
-       VALUES ($1, $2, $3)
+      `INSERT INTO "event_participant" (id, "eventId", "userId", "categoryId", "pricingTierId")
+       VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT ("eventId", "userId") DO NOTHING`,
-      [crypto.randomUUID(), eventId, session.user.id]
+      [crypto.randomUUID(), eventId, session.user.id, categoryId ?? null, pricingTierId ?? null]
     );
 
     fireJoinEmails(session.user.id, eventId, event.rows[0]).catch(() => {});
@@ -709,7 +772,7 @@ async function firePaymentEmails(
   }
 }
 
-export async function payForEventWithWallet(eventId: string): Promise<{ error?: string }> {
+export async function payForEventWithWallet(eventId: string, categoryId?: string, pricingTierId?: string): Promise<{ error?: string }> {
   try {
     const session = await auth.api.getSession({ headers: await headers() });
     if (!session) return { error: "Unauthorized" };
@@ -722,7 +785,6 @@ export async function payForEventWithWallet(eventId: string): Promise<{ error?: 
     const event = eventRes.rows[0];
     if (!event) return { error: "Event not found" };
     if (event.status === "cancelled") return { error: "This event has been cancelled" };
-    if (!event.price) return { error: "Event is free" };
     if (new Date(event.endDateTime) < new Date()) return { error: "Event has ended" };
 
     if (event.capacity) {
@@ -730,7 +792,10 @@ export async function payForEventWithWallet(eventId: string): Promise<{ error?: 
       if (Number(participants.rows[0].count) >= Number(event.capacity)) return { error: "Event is full" };
     }
 
-    const price = Number(event.price);
+    const selection = await resolveJoinSelection(eventId, categoryId, pricingTierId);
+    if (selection.error) return { error: selection.error };
+    const price = resolveRegistrationPrice({ price: Number(event.price) }, selection.category, selection.tier);
+    if (!price) return { error: "Event is free" };
     const payerId = session.user.id;
     const organizerId = event.organizerId as string;
     const organizationId = event.organizationId as string | null;
@@ -740,9 +805,9 @@ export async function payForEventWithWallet(eventId: string): Promise<{ error?: 
     try {
       await withTransaction(async (client) => {
         const insertRes = await client.query(
-          `INSERT INTO "event_participant" (id, "eventId", "userId") VALUES ($1, $2, $3)
+          `INSERT INTO "event_participant" (id, "eventId", "userId", "categoryId", "pricingTierId") VALUES ($1, $2, $3, $4, $5)
            ON CONFLICT ("eventId", "userId") DO NOTHING RETURNING id`,
-          [crypto.randomUUID(), eventId, payerId]
+          [crypto.randomUUID(), eventId, payerId, categoryId ?? null, pricingTierId ?? null]
         );
         if (insertRes.rowCount === 0) {
           alreadyJoined = true;
@@ -842,7 +907,9 @@ export async function completeEventStripePayment(
   payerId: string,
   remainderCents: number,
   walletCreditCents: number,
-  stripeSessionId: string
+  stripeSessionId: string,
+  categoryId?: string,
+  pricingTierId?: string
 ): Promise<void> {
   await ensureEventParticipantsTable();
 
@@ -882,9 +949,9 @@ export async function completeEventStripePayment(
     }
 
     const participantInsert = await client.query(
-      `INSERT INTO "event_participant" (id, "eventId", "userId") VALUES ($1, $2, $3)
+      `INSERT INTO "event_participant" (id, "eventId", "userId", "categoryId", "pricingTierId") VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT ("eventId", "userId") DO NOTHING RETURNING id`,
-      [crypto.randomUUID(), eventId, payerId]
+      [crypto.randomUUID(), eventId, payerId, categoryId ?? null, pricingTierId ?? null]
     );
     alreadyJoined = participantInsert.rowCount === 0;
 
@@ -1021,6 +1088,11 @@ export async function updateEvent(eventId: string, data: {
     endTime?: string;
     sortOrder: number;
   }>;
+  pricingTiers?: Array<{
+    label: string;
+    price: number;
+    sortOrder: number;
+  }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) throw new Error("Unauthorized");
@@ -1079,6 +1151,19 @@ export async function updateEvent(eventId: string, data: {
         `INSERT INTO "event_category" (id, "eventId", name, description, capacity, "maxPlayersPerTeam", price, "startTime", "endTime", "sortOrder")
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [crypto.randomUUID(), eventId, category.name, category.description ?? null, category.capacity ?? null, category.maxPlayersPerTeam ?? null, category.price ?? null, category.startTime ?? null, category.endTime ?? null, category.sortOrder]
+      );
+    }
+  }
+
+  // Same edit-time limitation noted above for categories — existing
+  // event_participant.pricingTierId rows fall back to NULL.
+  await pool.query(`DELETE FROM "event_pricing_tier" WHERE "eventId" = $1`, [eventId]);
+  if (data.pricingTiers?.length) {
+    for (const tier of data.pricingTiers) {
+      await pool.query(
+        `INSERT INTO "event_pricing_tier" (id, "eventId", label, price, "sortOrder")
+         VALUES ($1, $2, $3, $4, $5)`,
+        [crypto.randomUUID(), eventId, tier.label, tier.price, tier.sortOrder]
       );
     }
   }
@@ -1594,9 +1679,31 @@ export async function getEventCategories(eventId: string): Promise<EventCategory
   }));
 }
 
+export async function getEventPricingTiers(eventId: string): Promise<EventPricingTier[]> {
+  await ensureEventRegistrationTables();
+  const result = await pool.query(
+    `SELECT id, "eventId", label, price, "sortOrder"
+     FROM "event_pricing_tier"
+     WHERE "eventId" = $1
+     ORDER BY "sortOrder" ASC`,
+    [eventId]
+  );
+  return result.rows.map((row: {
+    id: string; eventId: string; label: string; price: number; sortOrder: number;
+  }) => ({
+    id: row.id,
+    eventId: row.eventId,
+    label: row.label,
+    price: row.price,
+    sortOrder: row.sortOrder,
+  }));
+}
+
 export async function joinEventWithForm(
   eventId: string,
-  responses: FormResponseInput[]
+  responses: FormResponseInput[],
+  categoryId?: string,
+  pricingTierId?: string
 ): Promise<{ error?: string }> {
   try {
     const session = await auth.api.getSession({ headers: await headers() });
@@ -1622,11 +1729,14 @@ export async function joinEventWithForm(
       }
     }
 
+    const selection = await resolveJoinSelection(eventId, categoryId, pricingTierId);
+    if (selection.error) return { error: selection.error };
+
     await pool.query(
-      `INSERT INTO "event_participant" (id, "eventId", "userId")
-       VALUES ($1, $2, $3)
+      `INSERT INTO "event_participant" (id, "eventId", "userId", "categoryId", "pricingTierId")
+       VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT ("eventId", "userId") DO NOTHING`,
-      [crypto.randomUUID(), eventId, session.user.id]
+      [crypto.randomUUID(), eventId, session.user.id, categoryId ?? null, pricingTierId ?? null]
     );
 
     fireJoinEmails(session.user.id, eventId, event.rows[0]).catch(() => {});

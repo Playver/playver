@@ -5,15 +5,18 @@ import { stripe } from "@/lib/stripe";
 import { pool } from "@/lib/db";
 import { payForEventWithWallet } from "@/app/actions/event";
 import { getAvailableWalletBalance } from "@/app/actions/wallet";
+import { ensureEventRegistrationTables, resolveRegistrationPrice } from "@/lib/event-registration-tables";
 
 export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { eventId, useWallet = true } = await request.json();
+  const { eventId, useWallet = true, categoryId, pricingTierId } = await request.json();
   if (typeof eventId !== "string" || !eventId) {
     return NextResponse.json({ error: "Invalid event" }, { status: 400 });
   }
+
+  await ensureEventRegistrationTables();
 
   const eventRes = await pool.query(
     `SELECT id, title, "organizerId", capacity, price, status, "endDateTime"
@@ -23,7 +26,6 @@ export async function POST(request: Request) {
   const event = eventRes.rows[0];
   if (!event) return NextResponse.json({ error: "Event not found" }, { status: 404 });
   if (event.status === "cancelled") return NextResponse.json({ error: "This event has been cancelled" }, { status: 400 });
-  if (!event.price) return NextResponse.json({ error: "Event is free" }, { status: 400 });
   if (new Date(event.endDateTime) < new Date()) return NextResponse.json({ error: "Event has ended" }, { status: 400 });
   if (event.organizerId === session.user.id) {
     return NextResponse.json({ error: "You can't pay to join your own event" }, { status: 400 });
@@ -44,7 +46,23 @@ export async function POST(request: Request) {
     }
   }
 
-  const price = Number(event.price);
+  const [categoriesRes, tiersRes] = await Promise.all([
+    pool.query(`SELECT id, price FROM "event_category" WHERE "eventId" = $1`, [eventId]),
+    pool.query(`SELECT id, price FROM "event_pricing_tier" WHERE "eventId" = $1`, [eventId]),
+  ]);
+  let category: { id: string; price: number | null } | null = null;
+  if (categoriesRes.rows.length > 0) {
+    category = categoriesRes.rows.find((c) => c.id === categoryId) ?? null;
+    if (!category) return NextResponse.json({ error: "Please select a category" }, { status: 400 });
+  }
+  let tier: { id: string; price: number } | null = null;
+  if (tiersRes.rows.length > 0) {
+    tier = tiersRes.rows.find((t) => t.id === pricingTierId) ?? null;
+    if (!tier) return NextResponse.json({ error: "Please select a pricing option" }, { status: 400 });
+  }
+
+  const price = resolveRegistrationPrice({ price: Number(event.price) }, category, tier);
+  if (!price) return NextResponse.json({ error: "Event is free" }, { status: 400 });
   // useWallet: false means the player explicitly chose "pay full amount by
   // card" in the confirmation dialog (EventJoinButton) instead of having
   // their wallet balance applied automatically.
@@ -54,7 +72,7 @@ export async function POST(request: Request) {
 
   // Wallet credit covers the whole price — pay immediately, no card needed.
   if (remainderCents === 0) {
-    const result = await payForEventWithWallet(eventId);
+    const result = await payForEventWithWallet(eventId, categoryId || undefined, pricingTierId || undefined);
     if (result.error) return NextResponse.json({ error: result.error }, { status: 400 });
     return NextResponse.json({ paidByWallet: true });
   }
@@ -90,7 +108,14 @@ export async function POST(request: Request) {
       },
     ],
     discounts,
-    metadata: { type: "event_payment", eventId, userId: session.user.id, walletCreditCents: String(creditCents) },
+    metadata: {
+      type: "event_payment",
+      eventId,
+      userId: session.user.id,
+      walletCreditCents: String(creditCents),
+      ...(category ? { categoryId: category.id } : {}),
+      ...(tier ? { pricingTierId: tier.id } : {}),
+    },
     // session_id lets the success page reconcile immediately (see
     // stripe-checkout-completion.ts) instead of depending entirely on the
     // webhook having already landed by the time the browser redirects back.

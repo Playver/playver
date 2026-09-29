@@ -52,7 +52,15 @@ async function handleEventPayment(session: Stripe.Checkout.Session) {
   const walletCreditCents = Number(session.metadata?.walletCreditCents ?? "0");
   if (!eventId || !userId || !remainderCents) return;
 
-  await completeEventStripePayment(eventId, userId, remainderCents, walletCreditCents, session.id);
+  await completeEventStripePayment(
+    eventId,
+    userId,
+    remainderCents,
+    walletCreditCents,
+    session.id,
+    session.metadata?.categoryId || undefined,
+    session.metadata?.pricingTierId || undefined
+  );
 }
 
 async function handleTeamPayment(session: Stripe.Checkout.Session) {

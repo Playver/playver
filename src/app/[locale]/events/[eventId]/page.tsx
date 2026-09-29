@@ -17,7 +17,7 @@ import EventCancelPostponeButton from "@/components/events/EventCancelPostponeBu
 import AdminAddParticipant from "@/components/events/AdminAddParticipant";
 import { Link } from "@/i18n/routing";
 import { auth } from "@/lib/auth";
-import { getEventById, getEventParticipants, getEventParticipationMap, getEventFormFields, getEventCategories } from "@/app/actions/event";
+import { getEventById, getEventParticipants, getEventParticipationMap, getEventFormFields, getEventCategories, getEventPricingTiers } from "@/app/actions/event";
 import { getUserOrganizations } from "@/app/actions/organization";
 import { canManageOrgEvent } from "@/app/actions/organizer-events";
 import { getTournamentTeams, getMyTournamentTeam, getPendingJoinRequests, getMyTeamOptions } from "@/app/actions/tournament";
@@ -88,13 +88,17 @@ export default async function EventDetailsPage({
 
   const isTournament = event.eventType === "Tournament";
 
-  const [joinedSet, participants, formFields, userRole, availableWalletCents, categories] = await Promise.all([
+  const [joinedSet, participants, formFields, userRole, availableWalletCents, categories, tiers] = await Promise.all([
     session && !isTournament ? getEventParticipationMap([event.id]) : Promise.resolve(new Set<string>()),
     getEventParticipants(event.id),
     event.customFormEnabled ? getEventFormFields(event.id) : Promise.resolve([]),
     session ? getUserRole(session.user.id) : Promise.resolve("player" as const),
-    session && !isTournament && event.price > 0 ? getAvailableWalletBalance(session.user.id) : Promise.resolve(0),
+    // Not gated on event.price > 0 — a pricing tier can make an individual
+    // event's real cost nonzero even when the event's own flat price is 0
+    // (e.g. karate/yoga-style resident/non-resident tiers).
+    session && !isTournament ? getAvailableWalletBalance(session.user.id) : Promise.resolve(0),
     getEventCategories(event.id),
+    getEventPricingTiers(event.id),
   ]);
 
   const [teams, myTeam, myTeamOptions, games, miniEvents, tournamentPlayers] = isTournament
@@ -413,6 +417,8 @@ export default async function EventDetailsPage({
                         price={event.price}
                         availableWalletCents={availableWalletCents}
                         formFields={formFields}
+                        categories={categories}
+                        tiers={tiers}
                         isEnded={isEnded || event.status === "cancelled"}
                       />
                     )}

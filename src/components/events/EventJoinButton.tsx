@@ -12,7 +12,7 @@ import { useTranslations } from "next-intl";
 import { joinEvent, leaveEvent, joinEventWithForm } from "@/app/actions/event";
 import { useUploadThing } from "@/lib/uploadthing";
 import { formatPrice } from "@/lib/format-price";
-import type { FormField, FormResponseInput } from "@/app/actions/event";
+import type { FormField, FormResponseInput, EventCategory, EventPricingTier } from "@/app/actions/event";
 
 export default function EventJoinButton({
   eventId,
@@ -22,6 +22,8 @@ export default function EventJoinButton({
   price = 0,
   availableWalletCents = 0,
   formFields = [],
+  categories = [],
+  tiers = [],
   isEnded = false,
 }: {
   eventId: string;
@@ -32,6 +34,8 @@ export default function EventJoinButton({
   /** Player's spendable wallet balance, applied as a credit toward price. */
   availableWalletCents?: number;
   formFields?: FormField[];
+  categories?: EventCategory[];
+  tiers?: EventPricingTier[];
   isEnded?: boolean;
 }) {
   const t = useTranslations("EventDetails");
@@ -41,6 +45,8 @@ export default function EventJoinButton({
   const [showModal, setShowModal] = useState(false);
   const [showPayConfirm, setShowPayConfirm] = useState(false);
   const [responses, setResponses] = useState<Record<string, string>>({});
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  const [selectedTierId, setSelectedTierId] = useState("");
   const [fileUploading, setFileUploading] = useState<Record<string, boolean>>({});
   const [formError, setFormError] = useState("");
   const [joinError, setJoinError] = useState("");
@@ -48,8 +54,14 @@ export default function EventJoinButton({
   const { startUpload } = useUploadThing("registrationFile");
 
   const hasForm = formFields.length > 0;
-  const walletCredit = Math.min(availableWalletCents, price);
-  const amountDueCents = Math.max(0, price - walletCredit);
+  const hasPicker = categories.length > 0 || tiers.length > 0;
+  // A category's price override always wins over a tier, same precedence as
+  // resolveRegistrationPrice server-side (event-registration-tables.ts).
+  const selectedCategory = categories.find(c => c.id === selectedCategoryId);
+  const selectedTier = tiers.find(tr => tr.id === selectedTierId);
+  const effectivePrice = selectedCategory?.price ?? selectedTier?.price ?? price;
+  const walletCredit = Math.min(availableWalletCents, effectivePrice);
+  const amountDueCents = Math.max(0, effectivePrice - walletCredit);
 
   async function startPayment(useWallet: boolean) {
     setShowPayConfirm(false);
@@ -59,7 +71,12 @@ export default function EventJoinButton({
       const res = await fetch("/api/stripe/event-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ eventId, useWallet }),
+        body: JSON.stringify({
+          eventId,
+          useWallet,
+          categoryId: selectedCategoryId || undefined,
+          pricingTierId: selectedTierId || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -80,7 +97,19 @@ export default function EventJoinButton({
     }
   }
 
+  function openPicker() {
+    setSelectedCategoryId("");
+    setSelectedTierId("");
+    setResponses({});
+    setFormError("");
+    setShowModal(true);
+  }
+
   async function handleJoinClick() {
+    if (hasPicker || hasForm) {
+      openPicker();
+      return;
+    }
     if (price > 0) {
       // Wallet balance would otherwise be spent silently on click — give the
       // player an explicit choice whenever there's actually a choice to make
@@ -94,22 +123,16 @@ export default function EventJoinButton({
       await startPayment(false);
       return;
     }
-    if (hasForm) {
-      setResponses({});
-      setFormError("");
-      setShowModal(true);
-    } else {
-      startTransition(async () => {
-        setJoinError("");
-        const result = await joinEvent(eventId);
-        if (result.error) {
-          setJoinError(result.error);
-        } else {
-          setJoined(true);
-          router.refresh();
-        }
-      });
-    }
+    startTransition(async () => {
+      setJoinError("");
+      const result = await joinEvent(eventId);
+      if (result.error) {
+        setJoinError(result.error);
+      } else {
+        setJoined(true);
+        router.refresh();
+      }
+    });
   }
 
   function handleLeaveClick() {
@@ -151,11 +174,35 @@ export default function EventJoinButton({
     e.preventDefault();
     setFormError("");
 
+    if (categories.length > 0 && !selectedCategoryId) {
+      setFormError(t("registrationSelectCategoryRequired"));
+      return;
+    }
+    if (tiers.length > 0 && !selectedTierId) {
+      setFormError(t("registrationSelectTierRequired"));
+      return;
+    }
     for (const field of formFields) {
       if (field.required && !responses[field.id]?.trim()) {
         setFormError(`"${field.label}" ${t("registrationFieldRequired")}`);
         return;
       }
+    }
+
+    // A category/tier picked here can resolve to a paid registration even
+    // when the event's own flat price is 0 (e.g. karate's age-slot
+    // categories + resident/non-resident tiers) — route to the same payment
+    // flow the flat-price path uses instead of joinEventWithForm, which only
+    // ever handles the free case (paid + custom form isn't supported today,
+    // same pre-existing gap as before this picker existed).
+    if (effectivePrice > 0) {
+      setShowModal(false);
+      if (walletCredit > 0) {
+        setShowPayConfirm(true);
+        return;
+      }
+      await startPayment(false);
+      return;
     }
 
     const responseList: FormResponseInput[] = formFields.map(f => ({
@@ -164,7 +211,7 @@ export default function EventJoinButton({
     }));
 
     startTransition(async () => {
-      const result = await joinEventWithForm(eventId, responseList);
+      const result = await joinEventWithForm(eventId, responseList, selectedCategoryId || undefined, selectedTierId || undefined);
       if (result.error) {
         setFormError(result.error);
       } else {
@@ -197,9 +244,15 @@ export default function EventJoinButton({
             disabled={isPending || paymentLoading}
             className="mt-auto w-full px-4 py-2.5 text-sm font-semibold rounded-lg bg-[#e21d12] text-white border border-[#e21d12] hover:bg-[#d41810] transition-colors disabled:opacity-60"
           >
-            {isPending || paymentLoading ? "..." : price > 0 ? `${t("payToJoin")} ${formatPrice(amountDueCents)}` : joinLabel}
+            {isPending || paymentLoading
+              ? "..."
+              : hasPicker
+              ? joinLabel
+              : price > 0
+              ? `${t("payToJoin")} ${formatPrice(amountDueCents)}`
+              : joinLabel}
           </button>
-          {price > 0 && walletCredit > 0 && (
+          {!hasPicker && price > 0 && walletCredit > 0 && (
             <p className="text-xs text-zinc-500 text-center">
               {t("walletCreditApplied", { amount: formatPrice(walletCredit) })}
             </p>
@@ -239,7 +292,7 @@ export default function EventJoinButton({
                 disabled={paymentLoading}
                 className="w-full py-2.5 text-sm font-semibold text-zinc-700 border border-zinc-200 rounded-lg hover:bg-zinc-50 transition-colors disabled:opacity-60"
               >
-                {t("payWithCardOnly", { amount: formatPrice(price) })}
+                {t("payWithCardOnly", { amount: formatPrice(effectivePrice) })}
               </button>
               <button
                 type="button"
@@ -280,6 +333,68 @@ export default function EventJoinButton({
             {/* Form */}
             <form onSubmit={handleFormSubmit} className="flex flex-col flex-1 min-h-0">
             <div className="overflow-y-auto flex-1 px-6 py-5 flex flex-col gap-4">
+              {categories.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-semibold text-zinc-700">
+                    {t("registrationSelectCategoryLabel")} <span className="text-[#e21d12]">*</span>
+                  </label>
+                  <div className="flex flex-col gap-2">
+                    {categories.map(category => (
+                      <button
+                        key={category.id}
+                        type="button"
+                        onClick={() => setSelectedCategoryId(category.id)}
+                        className={`flex items-center justify-between px-4 py-3 rounded-lg border text-left transition-colors ${
+                          selectedCategoryId === category.id
+                            ? "border-[#e21d12] bg-[#e21d12]/5"
+                            : "border-zinc-200 hover:border-zinc-300"
+                        }`}
+                      >
+                        <div>
+                          <p className="text-sm font-bold text-zinc-900">
+                            {category.name}
+                            {category.startTime && category.endTime && (
+                              <span className="ml-2 font-normal text-zinc-500">{category.startTime}–{category.endTime}</span>
+                            )}
+                          </p>
+                          {category.description && <p className="text-xs text-zinc-500">{category.description}</p>}
+                        </div>
+                        {selectedCategoryId === category.id && (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e21d12" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {tiers.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-semibold text-zinc-700">
+                    {t("registrationSelectTierLabel")} <span className="text-[#e21d12]">*</span>
+                  </label>
+                  <div className="flex flex-col gap-2">
+                    {tiers.map(tier => (
+                      <button
+                        key={tier.id}
+                        type="button"
+                        onClick={() => setSelectedTierId(tier.id)}
+                        className={`flex items-center justify-between px-4 py-3 rounded-lg border text-left transition-colors ${
+                          selectedTierId === tier.id
+                            ? "border-[#e21d12] bg-[#e21d12]/5"
+                            : "border-zinc-200 hover:border-zinc-300"
+                        }`}
+                      >
+                        <p className="text-sm font-bold text-zinc-900">{tier.label}</p>
+                        <span className="text-sm font-semibold text-zinc-600">{formatPrice(tier.price)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {formFields.map(field => (
                 <div key={field.id} className="flex flex-col gap-1.5">
                   <label className="text-sm font-semibold text-zinc-700">
@@ -392,7 +507,7 @@ export default function EventJoinButton({
                 disabled={isPending || anyFileUploading}
                 className="flex-1 py-2.5 text-sm font-semibold text-white rounded-lg bg-[#e21d12] hover:bg-[#d41810] disabled:opacity-60 transition-colors shadow-sm"
               >
-                {isPending ? "..." : joinLabel}
+                {isPending ? "..." : effectivePrice > 0 ? `${t("payToJoin")} ${formatPrice(effectivePrice)}` : joinLabel}
               </button>
             </div>
             </form>
