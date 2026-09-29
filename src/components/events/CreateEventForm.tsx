@@ -582,7 +582,12 @@ export default function CreateEventForm({
   const initEnd   = initialData ? splitDateTime(initialData.endDateTime)   : null;
 
   const [title, setTitle]             = useState(initialData?.title ?? "");
-  const [sport, setSport]             = useState(initialData?.sport ?? "");
+  // A sport value that isn't one of the dropdown's own options (e.g. an
+  // event edited before "Other" existed, or a custom sport from a prior
+  // save) reopens as "Other" with that value pre-filled in the custom input.
+  const initialSportIsCustom = Boolean(initialData?.sport) && !SPORTS.includes(initialData!.sport);
+  const [sport, setSport]             = useState(initialSportIsCustom ? "Other" : (initialData?.sport ?? ""));
+  const [customSport, setCustomSport] = useState(initialSportIsCustom ? initialData!.sport : "");
   const [eventType, setEventType]     = useState(initialData?.eventType ?? "");
   const [location, setLocation]       = useState(initialData?.location ?? "");
   const [startDate, setStartDate]     = useState(initStart?.date ?? "");
@@ -781,6 +786,10 @@ export default function CreateEventForm({
       setError(t("requiredFields"));
       return;
     }
+    if (sport === "Other" && !customSport.trim()) {
+      setError(t("customSportRequired"));
+      return;
+    }
     if (new Date(`${endDate}T${endTime}`) <= new Date(`${startDate}T${startTime}`)) {
       setError(t("endBeforeStart"));
       return;
@@ -830,7 +839,7 @@ export default function CreateEventForm({
     const allGalleryItems: GalleryItem[] = [...existingGalleryItems, ...newGalleryItems];
 
     const eventData = {
-      title, sport, eventType, location,
+      title, sport: sport === "Other" ? customSport.trim() : sport, eventType, location,
       startDateTime: `${startDate}T${startTime}`,
       endDateTime: `${endDate}T${endTime}`,
       coverImageUrl,
@@ -934,6 +943,14 @@ export default function CreateEventForm({
             </select>
           </Field>
         </div>
+        {sport === "Other" && (
+          <Field label={t("customSportLabel")} required>
+            <input
+              type="text" value={customSport} onChange={e => setCustomSport(e.target.value)}
+              placeholder={t("customSportPlaceholder")} className={inputClass}
+            />
+          </Field>
+        )}
         <Field label={t("locationLabel")} required>
           <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder={t("locationPlaceholder")} className={inputClass} />
         </Field>
