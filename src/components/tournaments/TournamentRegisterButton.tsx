@@ -13,6 +13,7 @@ import { useTranslations } from "next-intl";
 import { createTournamentTeam, importExistingTeamForTournament } from "@/app/actions/tournament";
 import type { MyTeamOption } from "@/app/actions/tournament";
 import { formatPrice } from "@/lib/format-price";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 type Mode = "new" | "existing";
 
@@ -37,6 +38,8 @@ export default function TournamentRegisterButton({
   const [isPending, startTransition] = useTransition();
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState("");
+  const [showPayConfirm, setShowPayConfirm] = useState(false);
+  const [pendingTeamId, setPendingTeamId] = useState<string | null>(null);
   const router = useRouter();
 
   const max = maxPlayersPerTeam ?? 20;
@@ -60,15 +63,26 @@ export default function TournamentRegisterButton({
     }
   }
 
-  async function payViaCheckout(teamId: string) {
-    // Confirm before redirecting to Checkout — same gate as
-    // TournamentCaptainPanel's handlePay. Cancelling here just leaves the
-    // team created but unpaid ("pending") — the captain can pay later from
-    // the team panel.
-    if (!confirm(t("payConfirm", { amount: formatPrice(price) }))) {
-      router.refresh(); // team was already created (pending payment) — show it
-      return;
-    }
+  function payViaCheckout(teamId: string) {
+    // Opens the branded ConfirmDialog below instead of a native confirm() —
+    // same gate as TournamentCaptainPanel's handlePay. Cancelling there just
+    // leaves the team created but unpaid ("pending") — the captain can pay
+    // later from the team panel.
+    setPendingTeamId(teamId);
+    setShowPayConfirm(true);
+  }
+
+  function cancelPayConfirm() {
+    setShowPayConfirm(false);
+    setPendingTeamId(null);
+    router.refresh(); // team was already created (pending payment) — show it
+  }
+
+  async function confirmPayConfirm() {
+    if (!pendingTeamId) return;
+    const teamId = pendingTeamId;
+    setShowPayConfirm(false);
+    setPendingTeamId(null);
     setPaymentLoading(true);
     setPaymentError("");
     try {
@@ -107,7 +121,7 @@ export default function TournamentRegisterButton({
       setShowModal(false);
 
       if (price > 0 && result.teamId) {
-        await payViaCheckout(result.teamId);
+        payViaCheckout(result.teamId);
         return;
       }
 
@@ -279,6 +293,17 @@ export default function TournamentRegisterButton({
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={showPayConfirm}
+        title={t("payConfirmTitle")}
+        message={t("payConfirm", { amount: formatPrice(price) })}
+        confirmLabel={t("payConfirmButton")}
+        cancelLabel={t("cancel")}
+        onConfirm={confirmPayConfirm}
+        onCancel={cancelPayConfirm}
+        confirming={paymentLoading}
+      />
     </>
   );
 }
