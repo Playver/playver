@@ -506,6 +506,7 @@
     "tabNew": "New team",
     "tabImport": "Add existing team",
     "selectTeamLabel": "Select your team",
+    "selectCategoryLabel": "Select a category",
     "membersCount": "{count} members",
     "importNotice": "Your team members will receive an email asking them to confirm or decline their participation.",
     "teamNameLabel": "Team name",
@@ -519,7 +520,8 @@
     "registerTeam": "Register Team",
     "errorTeamName": "Team name is required",
     "errorPlayerCount": "Player count must be at least 1",
-    "errorSelectTeam": "Please select a team"
+    "errorSelectTeam": "Please select a team",
+    "errorSelectCategory": "Please select a category"
   },
   "DashboardTournaments": {
     "eyebrow": "Compete",
@@ -655,7 +657,24 @@
     "agendaItemEnd": "End Time",
     "agendaItemDescription": "Notes (Optional)",
     "agendaItemDescriptionPlaceholder": "Any details about this activity...",
-    "agendaItemRemove": "Remove"
+    "agendaItemRemove": "Remove",
+    "sectionCategories": "Categories",
+    "sectionCategoriesHint": "Optional divisions participants or teams choose between when registering — e.g. age groups or skill levels. Leave empty for a single open category.",
+    "categoryAdd": "Add Category",
+    "category": "Category",
+    "categoryName": "Name",
+    "categoryNamePlaceholder": "e.g. Benjamin Masculin D4",
+    "categoryDescription": "Description (Optional)",
+    "categoryDescriptionPlaceholder": "Any details about this category...",
+    "categoryCapacity": "Capacity (Optional)",
+    "categoryCapacityTeam": "Team Capacity (Optional)",
+    "categoryCapacityPlaceholder": "e.g. 8",
+    "categoryMaxPlayers": "Max Players Per Team",
+    "categoryMaxPlayersPlaceholder": "e.g. 5",
+    "categoryPrice": "Price Override (Optional)",
+    "categoryPricePlaceholder": "e.g. 30.00",
+    "categoryPriceHint": "Leave blank to use the event's price for this category.",
+    "categoryRemove": "Remove"
   },
   "DashboardProfile": {
     "eyebrow": "Profile",

@@ -12,8 +12,10 @@ import {
   ensureEventParticipantsTable,
   getEventById,
   getEventFormFields,
+  getEventCategories,
   type EventItem,
   type FormField,
+  type EventCategory,
 } from "./event";
 
 // EventCard-compatible superset of getOrganizationEvents (organizer-registrations.ts,
@@ -46,7 +48,7 @@ export async function getOrganizationEventsFull(): Promise<EventItem[]> {
 
 export type OrganizerEventDetail =
   | { error: string }
-  | { event: EventItem; formFields: FormField[] };
+  | { event: EventItem; formFields: FormField[]; categories: EventCategory[] };
 
 // Powers /organizer/events/[eventId]. Verifies the event actually belongs to
 // the caller's active org — without this, any org member could load another
@@ -57,8 +59,11 @@ export async function getOrganizerEventDetail(eventId: string): Promise<Organize
   const event = await getEventById(eventId);
   if (!event || event.organizationId !== organization.id) return { error: "Event not found" };
 
-  const formFields = await getEventFormFields(eventId);
-  return { event, formFields };
+  const [formFields, categories] = await Promise.all([
+    getEventFormFields(eventId),
+    getEventCategories(eventId),
+  ]);
+  return { event, formFields, categories };
 }
 
 // Whether `userId` can manage an event belonging to `organizationId` —

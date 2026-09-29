@@ -34,6 +34,7 @@ import {
 } from "@/lib/emails";
 import { resend, FROM, layout, ctaButton, BASE_URL } from "@/lib/emails/_shared";
 import { ensureTournamentTables } from "@/lib/tournament-tables";
+import { ensureEventRegistrationTables, resolveRegistrationPrice } from "@/lib/event-registration-tables";
 import { assertCanManageTournament } from "@/app/actions/game";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -397,7 +398,8 @@ async function ensureTeamMemberTable() {
   `);
 }
 
-async function checkCanRegister(tournamentId: string, userId: string) {
+async function checkCanRegister(tournamentId: string, userId: string, categoryId?: string) {
+  await ensureEventRegistrationTables();
   const tournamentRes = await pool.query(
     `SELECT id, status, "endDateTime", price, capacity, sport, location FROM "event" WHERE id = $1 AND "registrationMode" = 'team'`,
     [tournamentId]
@@ -425,25 +427,54 @@ async function checkCanRegister(tournamentId: string, userId: string) {
     }
   }
 
-  return { tournament };
+  // Categories are optional — an event with none behaves exactly as before.
+  // When the tournament DOES have categories, the captain must pick one of
+  // them (mirrors how a paid tournament requires a price, just not enforced
+  // server-side for the custom-form case either today — same pre-existing gap).
+  const categoriesRes = await pool.query(
+    `SELECT id, capacity, price, "maxPlayersPerTeam" FROM "event_category" WHERE "eventId" = $1 ORDER BY "sortOrder" ASC`,
+    [tournamentId]
+  );
+  let category: { id: string; capacity: number | null; price: number | null; maxPlayersPerTeam: number | null } | null = null;
+  if (categoriesRes.rows.length > 0) {
+    if (!categoryId) return { error: "Please select a category" as string };
+    category = categoriesRes.rows.find((c) => c.id === categoryId) ?? null;
+    if (!category) return { error: "Invalid category" as string };
+    if (category.capacity) {
+      const categoryTeamCount = await pool.query(
+        `SELECT COUNT(*) FROM "tournament_team" WHERE "tournamentId" = $1 AND "categoryId" = $2`,
+        [tournamentId, categoryId]
+      );
+      if (Number(categoryTeamCount.rows[0].count) >= Number(category.capacity)) {
+        return { error: "This category is full" as string };
+      }
+    }
+  }
+
+  return { tournament, category };
 }
 
 export async function createTournamentTeam(
   tournamentId: string,
   teamName: string,
-  playerCount: number
+  playerCount: number,
+  categoryId?: string
 ): Promise<{ error?: string; teamId?: string; inviteCode?: string }> {
   try {
     const session = await auth.api.getSession({ headers: await headers() });
     if (!session) return { error: "Unauthorized" };
     await ensureTournamentTables();
 
-    const check = await checkCanRegister(tournamentId, session.user.id);
+    const check = await checkCanRegister(tournamentId, session.user.id, categoryId);
     if (check.error) return { error: check.error };
 
     const teamId = crypto.randomUUID();
     const inviteCode = crypto.randomUUID().replace(/-/g, "").substring(0, 12);
-    const isPaid = Number(check.tournament.price) > 0;
+    const price = resolveRegistrationPrice(
+      { price: Number(check.tournament.price) },
+      check.category ? { price: check.category.price != null ? Number(check.category.price) : null } : null
+    );
+    const isPaid = price > 0;
     const status = isPaid ? "pending" : "active";
     const paymentDeadline = isPaid ? new Date(Date.now() + 48 * 60 * 60 * 1000) : null;
 
@@ -462,9 +493,9 @@ export async function createTournamentTeam(
 
     await pool.query(
       `INSERT INTO "tournament_team"
-         (id, "tournamentId", "captainId", name, status, "recruitmentStatus", "inviteCode", "paymentDeadline", "playerCount", "linkedTeamId", "isImportedTeam")
-       VALUES ($1, $2, $3, $4, $5, 'closed', $6, $7, $8, $9, false)`,
-      [teamId, tournamentId, session.user.id, teamName, status, inviteCode, paymentDeadline, playerCount, linkedTeamId]
+         (id, "tournamentId", "captainId", name, status, "recruitmentStatus", "inviteCode", "paymentDeadline", "playerCount", "linkedTeamId", "isImportedTeam", "categoryId")
+       VALUES ($1, $2, $3, $4, $5, 'closed', $6, $7, $8, $9, false, $10)`,
+      [teamId, tournamentId, session.user.id, teamName, status, inviteCode, paymentDeadline, playerCount, linkedTeamId, check.category?.id ?? null]
     );
 
     // Send registration confirmation email to captain
@@ -502,7 +533,8 @@ export async function importExistingTeamForTournament(
   tournamentId: string,
   existingTeamId: string,
   teamName: string,
-  playerCount: number
+  playerCount: number,
+  categoryId?: string
 ): Promise<{ error?: string; teamId?: string; inviteCode?: string }> {
   try {
     const session = await auth.api.getSession({ headers: await headers() });
@@ -516,20 +548,24 @@ export async function importExistingTeamForTournament(
     );
     if (!teamRow.rows[0]) return { error: "Team not found or you are not the captain" };
 
-    const check = await checkCanRegister(tournamentId, session.user.id);
+    const check = await checkCanRegister(tournamentId, session.user.id, categoryId);
     if (check.error) return { error: check.error };
 
     const teamId = crypto.randomUUID();
     const inviteCode = crypto.randomUUID().replace(/-/g, "").substring(0, 12);
-    const isPaid = Number(check.tournament.price) > 0;
+    const price = resolveRegistrationPrice(
+      { price: Number(check.tournament.price) },
+      check.category ? { price: check.category.price != null ? Number(check.category.price) : null } : null
+    );
+    const isPaid = price > 0;
     const status = isPaid ? "pending" : "active";
     const paymentDeadline = isPaid ? new Date(Date.now() + 48 * 60 * 60 * 1000) : null;
 
     await pool.query(
       `INSERT INTO "tournament_team"
-         (id, "tournamentId", "captainId", name, status, "recruitmentStatus", "inviteCode", "paymentDeadline", "playerCount", "linkedTeamId", "isImportedTeam")
-       VALUES ($1, $2, $3, $4, $5, 'closed', $6, $7, $8, $9, true)`,
-      [teamId, tournamentId, session.user.id, teamName, status, inviteCode, paymentDeadline, playerCount, existingTeamId]
+         (id, "tournamentId", "captainId", name, status, "recruitmentStatus", "inviteCode", "paymentDeadline", "playerCount", "linkedTeamId", "isImportedTeam", "categoryId")
+       VALUES ($1, $2, $3, $4, $5, 'closed', $6, $7, $8, $9, true, $10)`,
+      [teamId, tournamentId, session.user.id, teamName, status, inviteCode, paymentDeadline, playerCount, existingTeamId, check.category?.id ?? null]
     );
 
     // Fetch existing team members (excluding the captain — they're already the tournament team captain)
@@ -998,9 +1034,10 @@ export async function payForTeamWithWallet(teamId: string): Promise<{ error?: st
 
     const result = await pool.query(
       `SELECT tt.id, tt.name, tt."captainId", tt.status, e.title, e.sport, e.location, e.price, e.status as "tournamentStatus",
-              e.id as "tournamentId", e."organizerId", e."startDateTime", e."endDateTime"
+              e.id as "tournamentId", e."organizerId", e."startDateTime", e."endDateTime", ec.price as "categoryPrice"
        FROM "tournament_team" tt
        JOIN "event" e ON e.id = tt."tournamentId"
+       LEFT JOIN "event_category" ec ON ec.id = tt."categoryId"
        WHERE tt.id = $1`,
       [teamId]
     );
@@ -1008,11 +1045,14 @@ export async function payForTeamWithWallet(teamId: string): Promise<{ error?: st
     if (!team) return { error: "Team not found" };
     if (team.captainId !== session.user.id) return { error: "Forbidden" };
     if (team.tournamentStatus === "cancelled") return { error: "This tournament has been cancelled" };
-    if (!team.price) return { error: "Tournament is free" };
+    const price = resolveRegistrationPrice(
+      { price: Number(team.price) },
+      team.categoryPrice != null ? { price: Number(team.categoryPrice) } : null
+    );
+    if (!price) return { error: "Tournament is free" };
     if (new Date(team.endDateTime) < new Date()) return { error: "Tournament has ended" };
     if (team.captainId === team.organizerId) return { error: "You can't pay to join your own tournament" };
 
-    const price = Number(team.price);
     const payerId = team.captainId as string;
     const organizerId = team.organizerId as string;
 

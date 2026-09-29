@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createTournamentTeam, importExistingTeamForTournament } from "@/app/actions/tournament";
 import type { MyTeamOption } from "@/app/actions/tournament";
+import type { EventCategory } from "@/app/actions/event";
 import { formatPrice } from "@/lib/format-price";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
@@ -22,16 +23,19 @@ export default function TournamentRegisterButton({
   price = 0,
   maxPlayersPerTeam,
   myTeams = [],
+  categories = [],
 }: {
   tournamentId: string;
   price?: number;
   maxPlayersPerTeam?: number | null;
   myTeams?: MyTeamOption[];
+  categories?: EventCategory[];
 }) {
   const t = useTranslations("TournamentRegister");
   const [showModal, setShowModal] = useState(false);
   const [mode, setMode] = useState<Mode>("new");
   const [teamName, setTeamName] = useState("");
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [playerCount, setPlayerCount] = useState(maxPlayersPerTeam ?? 5);
   const [selectedTeamId, setSelectedTeamId] = useState("");
   const [error, setError] = useState("");
@@ -42,12 +46,19 @@ export default function TournamentRegisterButton({
   const [pendingTeamId, setPendingTeamId] = useState<string | null>(null);
   const router = useRouter();
 
-  const max = maxPlayersPerTeam ?? 20;
+  // A category's price/maxPlayersPerTeam override the event's own values
+  // when selected — see resolveRegistrationPrice in event-registration-
+  // tables.ts for the authoritative, server-side version of this same rule.
+  const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
+  const effectivePrice = selectedCategory?.price ?? price;
+  const effectiveMaxPlayersPerTeam = selectedCategory?.maxPlayersPerTeam ?? maxPlayersPerTeam;
+  const max = effectiveMaxPlayersPerTeam ?? 20;
   const hasExistingTeams = myTeams.length > 0;
 
   function openModal() {
     setMode("new");
     setTeamName("");
+    setSelectedCategoryId("");
     setPlayerCount(maxPlayersPerTeam ?? 5);
     setSelectedTeamId("");
     setError("");
@@ -109,18 +120,19 @@ export default function TournamentRegisterButton({
     if (!teamName.trim()) { setError(t("errorTeamName")); return; }
     if (playerCount < 1) { setError(t("errorPlayerCount")); return; }
     if (mode === "existing" && !selectedTeamId) { setError(t("errorSelectTeam")); return; }
+    if (categories.length > 0 && !selectedCategoryId) { setError(t("errorSelectCategory")); return; }
 
     startTransition(async () => {
       setError("");
       const result = mode === "existing"
-        ? await importExistingTeamForTournament(tournamentId, selectedTeamId, teamName.trim(), playerCount)
-        : await createTournamentTeam(tournamentId, teamName.trim(), playerCount);
+        ? await importExistingTeamForTournament(tournamentId, selectedTeamId, teamName.trim(), playerCount, selectedCategoryId || undefined)
+        : await createTournamentTeam(tournamentId, teamName.trim(), playerCount, selectedCategoryId || undefined);
 
       if (result.error) { setError(result.error); return; }
 
       setShowModal(false);
 
-      if (price > 0 && result.teamId) {
+      if (effectivePrice > 0 && result.teamId) {
         payViaCheckout(result.teamId);
         return;
       }
@@ -232,6 +244,41 @@ export default function TournamentRegisterButton({
                 </div>
               )}
 
+              {/* Category picker — divisions the organizer set up for this
+                  tournament (e.g. age/skill groups). Only shown when the
+                  tournament actually has any; required when it does. */}
+              {categories.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-semibold text-zinc-700">
+                    {t("selectCategoryLabel")} <span className="text-[#e21d12]">*</span>
+                  </label>
+                  <div className="flex flex-col gap-2">
+                    {categories.map((category) => (
+                      <button
+                        key={category.id}
+                        type="button"
+                        onClick={() => setSelectedCategoryId(category.id)}
+                        className={`flex items-center justify-between px-4 py-3 rounded-lg border text-left transition-colors ${
+                          selectedCategoryId === category.id
+                            ? "border-[#e21d12] bg-[#e21d12]/5"
+                            : "border-zinc-200 hover:border-zinc-300"
+                        }`}
+                      >
+                        <div>
+                          <p className="text-sm font-bold text-zinc-900">{category.name}</p>
+                          {category.description && <p className="text-xs text-zinc-500">{category.description}</p>}
+                        </div>
+                        {selectedCategoryId === category.id && (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e21d12" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Team name */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-semibold text-zinc-700">
@@ -251,8 +298,8 @@ export default function TournamentRegisterButton({
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-semibold text-zinc-700">
                   {t("playerCountLabel")}
-                  {maxPlayersPerTeam && (
-                    <span className="ml-1 font-normal text-zinc-400">{t("playerCountMax", { max: maxPlayersPerTeam })}</span>
+                  {effectiveMaxPlayersPerTeam && (
+                    <span className="ml-1 font-normal text-zinc-400">{t("playerCountMax", { max: effectiveMaxPlayersPerTeam })}</span>
                   )}
                 </label>
                 <input
@@ -265,7 +312,7 @@ export default function TournamentRegisterButton({
                 />
               </div>
 
-              {price > 0 && (
+              {effectivePrice > 0 && (
                 <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700">
                   <span className="font-bold">{t("paidWarningBold")}</span> {t("paidWarning")}
                 </div>
@@ -286,7 +333,7 @@ export default function TournamentRegisterButton({
                   disabled={isPending}
                   className="flex-1 py-2.5 text-sm font-semibold text-white rounded-lg bg-[#e21d12] hover:bg-[#d41810] disabled:opacity-60 transition-colors"
                 >
-                  {isPending ? "..." : price > 0 ? t("registerAndPay") : t("registerTeam")}
+                  {isPending ? "..." : effectivePrice > 0 ? t("registerAndPay") : t("registerTeam")}
                 </button>
               </div>
             </form>
@@ -297,7 +344,7 @@ export default function TournamentRegisterButton({
       <ConfirmDialog
         open={showPayConfirm}
         title={t("payConfirmTitle")}
-        message={t("payConfirm", { amount: formatPrice(price) })}
+        message={t("payConfirm", { amount: formatPrice(effectivePrice) })}
         confirmLabel={t("payConfirmButton")}
         cancelLabel={t("cancel")}
         onConfirm={confirmPayConfirm}

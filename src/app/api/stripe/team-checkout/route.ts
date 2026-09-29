@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { stripe } from "@/lib/stripe";
 import { pool } from "@/lib/db";
 import { getAvailableWalletBalance } from "@/app/actions/wallet";
+import { resolveRegistrationPrice } from "@/lib/event-registration-tables";
 
 // Always redirects to a real Stripe Checkout session — unlike
 // event-checkout's "wallet credit fully covers it, skip Stripe" shortcut,
@@ -21,9 +22,10 @@ export async function POST(request: Request) {
   }
 
   const result = await pool.query(
-    `SELECT tt.id, tt.name, tt."captainId", tt.status, e.title, e."organizerId", e.price, e.status as "tournamentStatus", e.id as "tournamentId", e."endDateTime"
+    `SELECT tt.id, tt.name, tt."captainId", tt.status, e.title, e."organizerId", e.price, e.status as "tournamentStatus", e.id as "tournamentId", e."endDateTime", ec.price as "categoryPrice"
      FROM "tournament_team" tt
      JOIN "event" e ON e.id = tt."tournamentId"
+     LEFT JOIN "event_category" ec ON ec.id = tt."categoryId"
      WHERE tt.id = $1`,
     [teamId]
   );
@@ -34,7 +36,11 @@ export async function POST(request: Request) {
   if (team.tournamentStatus === "cancelled") {
     return NextResponse.json({ error: "This tournament has been cancelled" }, { status: 400 });
   }
-  if (!team.price) return NextResponse.json({ error: "Tournament is free" }, { status: 400 });
+  const price = resolveRegistrationPrice(
+    { price: Number(team.price) },
+    team.categoryPrice != null ? { price: Number(team.categoryPrice) } : null
+  );
+  if (!price) return NextResponse.json({ error: "Tournament is free" }, { status: 400 });
   if (new Date(team.endDateTime) < new Date()) {
     return NextResponse.json({ error: "Tournament has ended" }, { status: 400 });
   }
@@ -42,7 +48,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "You can't pay to join your own tournament" }, { status: 400 });
   }
 
-  const price = Number(team.price);
   const availableBalance = await getAvailableWalletBalance(session.user.id);
   const creditCents = Math.min(availableBalance, price);
 

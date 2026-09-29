@@ -506,6 +506,7 @@
     "tabNew": "Nouvelle équipe",
     "tabImport": "Ajouter une équipe existante",
     "selectTeamLabel": "Sélectionner votre équipe",
+    "selectCategoryLabel": "Sélectionner une catégorie",
     "membersCount": "{count} membres",
     "importNotice": "Les membres de votre équipe recevront un courriel leur demandant de confirmer ou refuser leur participation.",
     "teamNameLabel": "Nom de l'équipe",
@@ -519,7 +520,8 @@
     "registerTeam": "Inscrire l'équipe",
     "errorTeamName": "Le nom de l'équipe est obligatoire",
     "errorPlayerCount": "Le nombre de joueurs doit être au moins 1",
-    "errorSelectTeam": "Veuillez sélectionner une équipe"
+    "errorSelectTeam": "Veuillez sélectionner une équipe",
+    "errorSelectCategory": "Veuillez sélectionner une catégorie"
   },
   "DashboardTournaments": {
     "eyebrow": "Compétition",
@@ -655,7 +657,24 @@
     "agendaItemEnd": "Heure de fin",
     "agendaItemDescription": "Notes (Optionnel)",
     "agendaItemDescriptionPlaceholder": "Détails sur cette activité...",
-    "agendaItemRemove": "Supprimer"
+    "agendaItemRemove": "Supprimer",
+    "sectionCategories": "Catégories",
+    "sectionCategoriesHint": "Divisions optionnelles parmi lesquelles les participants ou équipes choisissent lors de l'inscription — par exemple des groupes d'âge ou niveaux. Laissez vide pour une seule catégorie ouverte.",
+    "categoryAdd": "Ajouter une catégorie",
+    "category": "Catégorie",
+    "categoryName": "Nom",
+    "categoryNamePlaceholder": "ex. Benjamin Masculin D4",
+    "categoryDescription": "Description (Optionnel)",
+    "categoryDescriptionPlaceholder": "Détails sur cette catégorie...",
+    "categoryCapacity": "Capacité (Optionnel)",
+    "categoryCapacityTeam": "Capacité en équipes (Optionnel)",
+    "categoryCapacityPlaceholder": "ex. 8",
+    "categoryMaxPlayers": "Joueurs max par équipe",
+    "categoryMaxPlayersPlaceholder": "ex. 5",
+    "categoryPrice": "Prix personnalisé (Optionnel)",
+    "categoryPricePlaceholder": "ex. 30.00",
+    "categoryPriceHint": "Laissez vide pour utiliser le prix de l'événement pour cette catégorie.",
+    "categoryRemove": "Supprimer"
   },
   "DashboardProfile": {
     "eyebrow": "Profil",

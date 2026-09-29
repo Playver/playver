@@ -31,7 +31,7 @@ export default async function OrganizerEventManagePage({
   }
 
   if ("error" in detail) notFound();
-  const { event, formFields } = detail;
+  const { event, formFields, categories } = detail;
   const isPaid = event.price > 0;
 
   return (
@@ -44,7 +44,7 @@ export default async function OrganizerEventManagePage({
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-8 items-start">
         <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-6">
           <h2 className="text-lg font-bold text-zinc-900 mb-6">{tCreate("editTitle")}</h2>
-          <OrganizerEventEditForm event={event} formFields={formFields} />
+          <OrganizerEventEditForm event={event} formFields={formFields} categories={categories} />
         </div>
 
         <aside className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-6 flex flex-col gap-4">

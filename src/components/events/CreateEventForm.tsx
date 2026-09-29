@@ -13,7 +13,7 @@ import Image from "next/image";
 import { useRouter } from "@/i18n/routing";
 import { createEvent, updateEvent } from "@/app/actions/event";
 import { useUploadThing } from "@/lib/uploadthing";
-import type { FormFieldType, EventItem, FormField, GalleryItem, AgendaItem } from "@/app/actions/event";
+import type { FormFieldType, EventItem, FormField, GalleryItem, AgendaItem, EventCategory } from "@/app/actions/event";
 
 function splitDateTime(iso: string) {
   const d = new Date(iso);
@@ -96,6 +96,20 @@ type AgendaItemDraft = {
   startTime: string;
   endTime: string;
   description: string;
+};
+
+// startTime/endTime (age-tiered session slots for individual/recurring
+// events) are added in Stage 3, alongside the individual-registration
+// category picker that would actually use them — Stage 2 only wires
+// categories into team registration (divisions), so exposing time-slot
+// fields here now would be UI for a feature not yet usable.
+type CategoryDraft = {
+  id: string;
+  name: string;
+  description: string;
+  capacity: string;
+  maxPlayersPerTeam: string;
+  price: string;
 };
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -358,17 +372,118 @@ function AgendaItemBuilder({
   );
 }
 
+function CategoryBuilder({
+  category,
+  index,
+  t,
+  inputClass,
+  isTeamEvent,
+  isPaid,
+  onChange,
+  onRemove,
+}: {
+  category: CategoryDraft;
+  index: number;
+  t: ReturnType<typeof useTranslations>;
+  inputClass: string;
+  isTeamEvent: boolean;
+  isPaid: boolean;
+  onChange: (updates: Partial<CategoryDraft>) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold text-zinc-400 uppercase tracking-wide">
+          {t("category")} {index + 1}
+        </span>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="text-xs font-semibold text-zinc-400 hover:text-red-500 transition-colors"
+        >
+          {t("categoryRemove")}
+        </button>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-semibold text-zinc-600">{t("categoryName")}</label>
+        <input
+          type="text"
+          value={category.name}
+          onChange={e => onChange({ name: e.target.value })}
+          placeholder={t("categoryNamePlaceholder")}
+          className={inputClass}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-semibold text-zinc-600">{t("categoryDescription")}</label>
+        <input
+          type="text"
+          value={category.description}
+          onChange={e => onChange({ description: e.target.value })}
+          placeholder={t("categoryDescriptionPlaceholder")}
+          className={inputClass}
+        />
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-zinc-600">
+            {isTeamEvent ? t("categoryCapacityTeam") : t("categoryCapacity")}
+          </label>
+          <input
+            type="number" min="1"
+            value={category.capacity}
+            onChange={e => onChange({ capacity: e.target.value })}
+            placeholder={t("categoryCapacityPlaceholder")}
+            className={inputClass}
+          />
+        </div>
+        {isTeamEvent && (
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-zinc-600">{t("categoryMaxPlayers")}</label>
+            <input
+              type="number" min="1"
+              value={category.maxPlayersPerTeam}
+              onChange={e => onChange({ maxPlayersPerTeam: e.target.value })}
+              placeholder={t("categoryMaxPlayersPlaceholder")}
+              className={inputClass}
+            />
+          </div>
+        )}
+      </div>
+      {isPaid && (
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-zinc-600">{t("categoryPrice")}</label>
+          <div className="relative">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 font-semibold text-sm">$</span>
+            <input
+              type="number" min="0.50" step="0.01"
+              value={category.price}
+              onChange={e => onChange({ price: e.target.value })}
+              placeholder={t("categoryPricePlaceholder")}
+              className={`${inputClass} pl-8`}
+            />
+          </div>
+          <p className="text-xs text-zinc-400 mt-1">{t("categoryPriceHint")}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CreateEventForm({
   onSuccess,
   onCancel,
   initialData,
   initialFormFields,
+  initialCategories,
   eventId,
 }: {
   onSuccess?: () => void;
   onCancel?: () => void;
   initialData?: EventItem;
   initialFormFields?: FormField[];
+  initialCategories?: EventCategory[];
   eventId?: string;
 }) {
   const t = useTranslations("CreateEvent");
@@ -413,6 +528,18 @@ export default function CreateEventForm({
       startTime: a.startTime,
       endTime: a.endTime,
       description: a.description ?? "",
+    })) ?? []
+  );
+
+  // Categories (divisions for team events; Stage 3 adds age-tiered slots)
+  const [categories, setCategories] = useState<CategoryDraft[]>(
+    initialCategories?.map(c => ({
+      id: crypto.randomUUID(),
+      name: c.name,
+      description: c.description ?? "",
+      capacity: c.capacity != null ? String(c.capacity) : "",
+      maxPlayersPerTeam: c.maxPlayersPerTeam != null ? String(c.maxPlayersPerTeam) : "",
+      price: c.price != null ? String(c.price / 100) : "",
     })) ?? []
   );
 
@@ -502,6 +629,21 @@ export default function CreateEventForm({
     setAgendaItems(prev => prev.filter(a => a.id !== id));
   }
 
+  function addCategory() {
+    setCategories(prev => [
+      ...prev,
+      { id: crypto.randomUUID(), name: "", description: "", capacity: "", maxPlayersPerTeam: "", price: "" },
+    ]);
+  }
+
+  function updateCategory(id: string, updates: Partial<CategoryDraft>) {
+    setCategories(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+  }
+
+  function removeCategory(id: string) {
+    setCategories(prev => prev.filter(c => c.id !== id));
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title || !sport || !eventType || !location || !startDate || !startTime || !endDate || !endTime) {
@@ -585,6 +727,16 @@ export default function CreateEventForm({
             order: i,
           }))
         : undefined,
+      categories: categories
+        .filter(c => c.name.trim())
+        .map((c, i) => ({
+          name: c.name.trim(),
+          description: c.description.trim() || undefined,
+          capacity: c.capacity ? parseInt(c.capacity) : undefined,
+          maxPlayersPerTeam: registrationMode === "team" && c.maxPlayersPerTeam ? parseInt(c.maxPlayersPerTeam) : undefined,
+          price: isPaid && c.price ? Math.round(parseFloat(c.price) * 100) : undefined,
+          sortOrder: i,
+        })),
     };
 
     startTransition(async () => {
@@ -887,6 +1039,39 @@ export default function CreateEventForm({
             </button>
           </div>
         )}
+      </Section>
+
+      {/* Categories — divisions for team events (e.g. tournament pools);
+          Stage 3 also wires these into individual-registration events as
+          age-tiered session slots. Optional: zero categories means this
+          event behaves exactly as before. */}
+      <Section title={t("sectionCategories")}>
+        <p className="text-xs text-zinc-400 -mt-2">{t("sectionCategoriesHint")}</p>
+        <div className="flex flex-col gap-3">
+          {categories.map((category, index) => (
+            <CategoryBuilder
+              key={category.id}
+              category={category}
+              index={index}
+              t={t}
+              inputClass={inputClass}
+              isTeamEvent={registrationMode === "team"}
+              isPaid={isPaid}
+              onChange={updates => updateCategory(category.id, updates)}
+              onRemove={() => removeCategory(category.id)}
+            />
+          ))}
+          <button
+            type="button"
+            onClick={addCategory}
+            className="flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-zinc-200 hover:border-[#e21d12] hover:text-[#e21d12] text-zinc-400 text-sm font-semibold transition-colors"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            {t("categoryAdd")}
+          </button>
+        </div>
       </Section>
 
       {/* Agenda */}

@@ -33,6 +33,7 @@ import { requireOrganizationPermission } from "./organization";
 import { hasPermission, type OrgRole } from "@/lib/organizer-permissions";
 import { serializeEvent } from "@/lib/serialize-event";
 import { isTeamEvent } from "@/lib/event-type";
+import { ensureEventRegistrationTables } from "@/lib/event-registration-tables";
 
 let eventParticipantsTablePromise: Promise<void> | null = null;
 
@@ -119,6 +120,23 @@ export type FormResponseInput = {
   value: string;
 };
 
+// Divisions (team events, e.g. basketball's "Mini Masculin") or age-tiered
+// session slots (individual events, e.g. karate's two time slots) — see
+// event-registration-tables.ts's resolveRegistrationPrice for how `price`
+// interacts with the event's own flat price.
+export type EventCategory = {
+  id: string;
+  eventId: string;
+  name: string;
+  description: string | null;
+  capacity: number | null;
+  maxPlayersPerTeam: number | null;
+  price: number | null;
+  startTime: string | null;
+  endTime: string | null;
+  sortOrder: number;
+};
+
 export type EventItem = ReturnType<typeof serializeEvent>;
 // Public-facing shape only — deliberately excludes email. This is rendered on
 // the public event page, which any visitor (including logged-out ones) can
@@ -191,6 +209,16 @@ export async function createEvent(data: {
     options: string[];
     order: number;
   }>;
+  categories?: Array<{
+    name: string;
+    description?: string;
+    capacity?: number;
+    maxPlayersPerTeam?: number;
+    price?: number;
+    startTime?: string;
+    endTime?: string;
+    sortOrder: number;
+  }>;
 }) {
   // Event creation requires an active organization — every event is now
   // organization-owned. Legacy events with organizationId null predate this
@@ -198,6 +226,7 @@ export async function createEvent(data: {
   const { userId, organization } = await requireOrganizationPermission("MANAGE_EVENTS");
 
   await ensureFormTables();
+  await ensureEventRegistrationTables();
 
   const galleryItems = data.galleryItems ?? [];
   const galleryUrls = galleryItems.map(i => i.url);
@@ -231,6 +260,16 @@ export async function createEvent(data: {
         `INSERT INTO "event_form_field" (id, "eventId", label, "fieldType", required, options, "order")
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [crypto.randomUUID(), id, field.label, field.fieldType, field.required, field.options, field.order]
+      );
+    }
+  }
+
+  if (data.categories?.length) {
+    for (const category of data.categories) {
+      await pool.query(
+        `INSERT INTO "event_category" (id, "eventId", name, description, capacity, "maxPlayersPerTeam", price, "startTime", "endTime", "sortOrder")
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [crypto.randomUUID(), id, category.name, category.description ?? null, category.capacity ?? null, category.maxPlayersPerTeam ?? null, category.price ?? null, category.startTime ?? null, category.endTime ?? null, category.sortOrder]
       );
     }
   }
@@ -972,11 +1011,22 @@ export async function updateEvent(eventId: string, data: {
     options: string[];
     order: number;
   }>;
+  categories?: Array<{
+    name: string;
+    description?: string;
+    capacity?: number;
+    maxPlayersPerTeam?: number;
+    price?: number;
+    startTime?: string;
+    endTime?: string;
+    sortOrder: number;
+  }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) throw new Error("Unauthorized");
 
   await ensureFormTables();
+  await ensureEventRegistrationTables();
 
   const authResult = await authorizeEventManagement(eventId, session.user.id);
   if ("error" in authResult) throw new Error(authResult.error);
@@ -1014,6 +1064,21 @@ export async function updateEvent(eventId: string, data: {
         `INSERT INTO "event_form_field" (id, "eventId", label, "fieldType", required, options, "order")
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [crypto.randomUUID(), eventId, field.label, field.fieldType, field.required, field.options, field.order]
+      );
+    }
+  }
+
+  // Existing tournament_team.categoryId rows fall back to NULL (ON DELETE
+  // SET NULL) when their category is replaced here — same edit-time
+  // limitation as event_form_response has against edited form fields, not a
+  // new gap introduced by categories.
+  await pool.query(`DELETE FROM "event_category" WHERE "eventId" = $1`, [eventId]);
+  if (data.categories?.length) {
+    for (const category of data.categories) {
+      await pool.query(
+        `INSERT INTO "event_category" (id, "eventId", name, description, capacity, "maxPlayersPerTeam", price, "startTime", "endTime", "sortOrder")
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [crypto.randomUUID(), eventId, category.name, category.description ?? null, category.capacity ?? null, category.maxPlayersPerTeam ?? null, category.price ?? null, category.startTime ?? null, category.endTime ?? null, category.sortOrder]
       );
     }
   }
@@ -1499,6 +1564,33 @@ export async function getEventFormFields(eventId: string): Promise<FormField[]> 
     required: row.required,
     options: row.options ?? [],
     order: row.order,
+  }));
+}
+
+export async function getEventCategories(eventId: string): Promise<EventCategory[]> {
+  await ensureEventRegistrationTables();
+  const result = await pool.query(
+    `SELECT id, "eventId", name, description, capacity, "maxPlayersPerTeam", price, "startTime", "endTime", "sortOrder"
+     FROM "event_category"
+     WHERE "eventId" = $1
+     ORDER BY "sortOrder" ASC`,
+    [eventId]
+  );
+  return result.rows.map((row: {
+    id: string; eventId: string; name: string; description: string | null;
+    capacity: number | null; maxPlayersPerTeam: number | null; price: number | null;
+    startTime: string | null; endTime: string | null; sortOrder: number;
+  }) => ({
+    id: row.id,
+    eventId: row.eventId,
+    name: row.name,
+    description: row.description,
+    capacity: row.capacity,
+    maxPlayersPerTeam: row.maxPlayersPerTeam,
+    price: row.price,
+    startTime: row.startTime,
+    endTime: row.endTime,
+    sortOrder: row.sortOrder,
   }));
 }
 

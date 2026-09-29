@@ -9,7 +9,7 @@ import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import CreateEventForm from "@/components/events/CreateEventForm";
 import { auth } from "@/lib/auth";
-import { getEventById, getEventFormFields } from "@/app/actions/event";
+import { getEventById, getEventFormFields, getEventCategories } from "@/app/actions/event";
 import { getUserRole } from "@/app/actions/admin";
 
 export default async function EditEventPage({
@@ -33,7 +33,10 @@ export default async function EditEventPage({
   if (!event) notFound();
   if (event.organizerId !== session.user.id && userRole !== "super_admin") notFound();
 
-  const formFields = event.customFormEnabled ? await getEventFormFields(eventId) : [];
+  const [formFields, categories] = await Promise.all([
+    event.customFormEnabled ? getEventFormFields(eventId) : Promise.resolve([]),
+    getEventCategories(eventId),
+  ]);
 
   return (
     <>
@@ -49,6 +52,7 @@ export default async function EditEventPage({
           <CreateEventForm
             initialData={event}
             initialFormFields={formFields}
+            initialCategories={categories}
             eventId={eventId}
           />
         </div>
