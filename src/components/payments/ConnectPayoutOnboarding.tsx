@@ -5,9 +5,10 @@
 // connect.stripe.com page used to handle, but inline on our own page and
 // restyled to match Playver (brand red, Inter, our own rounded/shadow
 // language) instead of looking like a third-party redirect. Used by
-// WalletClient.tsx, OrganizerPaymentsClient.tsx, and the org creation
-// wizard's Step9Payments.tsx — the only three places that onboard a Connect
-// account.
+// WalletClient.tsx, OrganizerPaymentsClient.tsx, and the organizer Settings
+// page's OrganizerPayoutSection.tsx (the org creation wizard dropped its own
+// Connect-onboarding step — payouts are set up post-creation from Settings
+// now) — the only three places that onboard a Connect account.
 import { useMemo } from "react";
 import { loadConnectAndInitialize } from "@stripe/connect-js";
 import { ConnectComponentsProvider, ConnectAccountOnboarding } from "@stripe/react-connect-js";

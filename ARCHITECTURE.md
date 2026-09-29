@@ -53,7 +53,7 @@ src/
     api/                 # real HTTP routes, see §3
     layout.tsx           # root shell (fonts, <html>, nothing app-specific)
   components/            # one folder per feature area, mirrors src/app/[locale]/
-    organizer/create-wizard/   # the 10-step "create an organization" wizard
+    organizer/create-wizard/   # the 4-step "create an organization" wizard
     home-feed/                 # the logged-in "/" social feed shell (newest, mostly static-content UI)
     events/, teams/, tournaments/, athletes/, dashboard/, auth/, layout/, legal/, ui/, home/
   lib/                   # cross-cutting helpers — db, auth, permissions, email, formatting
@@ -100,7 +100,7 @@ Almost every mutating action in the organizer-scoped files follows the same shap
 
 - `OrgRole` (`src/lib/organizer-permissions.ts`): `OWNER`, `ADMINISTRATOR`, `OPERATIONS_MANAGER`, `COACH`, `STAFF`, `READ_ONLY`. `hasPermission(role, permission)` checks a static matrix; `canAssignRole(assignerRole, targetRole)` separately gates promoting/demoting admins (requires `MANAGE_ADMINISTRATORS`, not just `MANAGE_PEOPLE`, specifically so `STAFF` can't self-promote).
 - A user's **active organization** is tracked via the `active_org_id` cookie. `getActiveOrganization()` (`src/app/actions/organization.ts`) reads it and **re-verifies membership server-side on every call** — a forged/stale cookie just resolves to "not a member," never elevated access. `requireOrganizationPermission(permission)` wraps this and throws `ForbiddenError` (`src/lib/organizer-errors.ts`) on failure.
-- Users can belong to multiple orgs; `setActiveOrganization(id)` switches which one is "active" after re-verifying membership. The org-creation wizard (`src/components/organizer/create-wizard/`) writes progressively as the user goes — nothing is persisted until step 2 (name/slug required), every step after upserts and bumps `wizardStep`, so closing and reopening resumes where they left off. A `publicationStatus` of `'draft'` vs `'published'` distinguishes a finished org from a WIP one — **check this, not just membership existence, when deciding whether a user "is an organizer."**
+- Users can belong to multiple orgs; `setActiveOrganization(id)` switches which one is "active" after re-verifying membership. The org-creation wizard (`src/components/organizer/create-wizard/`) writes progressively as the user goes — nothing is persisted until step 1 (name/type/location required), every step after upserts and bumps `wizardStep`, so closing and reopening resumes at step 1 with that field data prefilled (the wizard was rebuilt from 10 steps down to 4; an old draft's stored step position doesn't carry over). A `publicationStatus` of `'draft'` vs `'published'` distinguishes a finished org from a WIP one — **check this, not just membership existence, when deciding whether a user "is an organizer."**
 
 ## 8. Money flow
 
@@ -136,7 +136,7 @@ Vitest (`npm test`), no config file (running on defaults). Coverage today is **n
 | Organizer roles/permissions | `src/lib/organizer-permissions.ts`, `src/app/actions/organization.ts` |
 | Org wallet / Stripe Connect payouts | `src/app/actions/organizer-wallet.ts`, `src/app/[locale]/organizer/payments/` |
 | Athlete wallet | `src/app/actions/wallet.ts`, `src/app/[locale]/dashboard/wallet/` |
-| Org creation wizard | `src/components/organizer/create-wizard/` (`CreateOrganizationWizard.tsx` + `Step1…Step10`) |
+| Org creation wizard | `src/components/organizer/create-wizard/` (`CreateOrganizationWizard.tsx` + `Step1Profile`/`Step2Manage`/`Step3Agreement`/`Step4Done`) |
 | Logged-in home feed (`/`) | `src/components/home-feed/`, `src/app/[locale]/page.tsx` |
 | Logged-out marketing landing page | `src/components/home/` |
 | Teams | `src/app/actions/team.ts`, `src/components/teams/` |

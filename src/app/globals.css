@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #e7e7cb;
+  --background: #ffffff;
   --foreground: #18181b;
   --primary: #e21d12;
   --primary-dark: #d41810;
@@ -14,6 +14,19 @@
   --color-primary-dark: var(--primary-dark);
 }
 
+/* overflow-x: hidden lives on html ONLY (not body too) on purpose: per the
+   CSS spec, an element with overflow-x != visible and overflow-y left as
+   "visible" gets its overflow-y silently computed to "auto" instead — so
+   having it on BOTH html and body turned both into independent scroll
+   containers. That's an actual scroll-position mismatch: the page's real
+   scrolling element is html (document.scrollingElement in standards mode),
+   but position: sticky descendants of body were calculating against body's
+   own (never-actually-scrolling) box as their nearest scroll container,
+   so they just moved with the page instead of pinning (confirmed via
+   getBoundingClientRect while scrolling — sticky sidebars across the app
+   were silently non-functional). Keeping overflow-x: hidden on html alone
+   still prevents horizontal scroll site-wide, without making body a second,
+   inconsistent scroll container. */
 html {
   overflow-x: hidden;
 }
@@ -21,5 +34,4 @@ html {
 body {
   background: var(--background);
   color: var(--foreground);
-  overflow-x: hidden;
 }

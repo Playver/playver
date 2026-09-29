@@ -5,8 +5,8 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
-import { Link, useRouter } from "@/i18n/routing";
-import { signOut } from "@/lib/auth-client";
+import { Link } from "@/i18n/routing";
+import { useSignOut } from "@/lib/use-sign-out";
 import type { OrgRole } from "@/lib/organizer-permissions";
 
 const IconSignOut = () => (
@@ -36,7 +36,7 @@ export default function OrganizerUserMenu({
   role: OrgRole;
 }) {
   const t = useTranslations("Organizer");
-  const router = useRouter();
+  const handleSignOut = useSignOut();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -59,11 +59,6 @@ export default function OrganizerUserMenu({
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [open]);
-
-  async function handleSignOut() {
-    await signOut();
-    router.push("/auth/signin");
-  }
 
   const initial = userName[0]?.toUpperCase() ?? "?";
 

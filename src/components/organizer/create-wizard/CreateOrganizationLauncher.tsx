@@ -98,7 +98,10 @@ export default function CreateOrganizationLauncher({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-semibold text-zinc-900 truncate">{draft.name || t("wizardUntitled")}</span>
-                    <span className="block text-xs text-zinc-500">{t("wizardStepLabel", { current: draft.wizardStep, total: 10 })}</span>
+                    {/* Old drafts may carry a wizardStep from the 10-step
+                        scheme (up to 10) — clamp for display since the
+                        wizard itself always resumes at step 1 regardless. */}
+                    <span className="block text-xs text-zinc-500">{t("wizardStepLabel", { current: Math.min(draft.wizardStep, 4), total: 4 })}</span>
                   </span>
                 </button>
               ))}

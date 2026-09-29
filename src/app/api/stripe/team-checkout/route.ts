@@ -75,7 +75,10 @@ export async function POST(request: Request) {
     ],
     discounts,
     metadata: { type: "team_payment", teamId, userId: session.user.id, walletCreditCents: String(creditCents) },
-    success_url: `${baseUrl}/events/${team.tournamentId}?payment=success`,
+    // session_id lets the success page reconcile immediately (see
+    // stripe-checkout-completion.ts) instead of depending entirely on the
+    // webhook having already landed by the time the browser redirects back.
+    success_url: `${baseUrl}/events/${team.tournamentId}?payment=success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${baseUrl}/events/${team.tournamentId}`,
   });
 

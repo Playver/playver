@@ -1,9 +1,12 @@
 "use client";
 
 // Left nav for the athlete /dashboard/* shell (see dashboard/layout.tsx).
+// Scoped to dashboard-specific nav only — same convention as
+// OrganizerSidebar: the user-info block, organizer-dashboard link and
+// sign-out already live in the outer FeedSidebar (LoggedInPageShell), so
+// this doesn't duplicate them.
 import { useTranslations } from "next-intl";
-import { Link, usePathname, useRouter } from "@/i18n/routing";
-import { signOut } from "@/lib/auth-client";
+import { Link, usePathname } from "@/i18n/routing";
 
 const IconOverview = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -50,32 +53,10 @@ const IconWallet = () => (
   </svg>
 );
 
-const IconProfile = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-    <circle cx="12" cy="7" r="4" />
-  </svg>
-);
-
 const IconSettings = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="3" />
     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-  </svg>
-);
-
-const IconOrganizer = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-    <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-  </svg>
-);
-
-const IconSignOut = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-    <polyline points="16 17 21 12 16 7" />
-    <line x1="21" y1="12" x2="9" y2="12" />
   </svg>
 );
 
@@ -90,17 +71,13 @@ const IconRoles = () => (
 export default function DashboardSidebar({
   user,
 }: {
-  user: { name: string; email: string; role?: string };
+  user: { role?: string };
 }) {
   const t = useTranslations("Dashboard");
   const pathname = usePathname();
-  const router = useRouter();
-  const firstName = user.name.split(" ")[0];
-  const initial = firstName[0]?.toUpperCase() ?? "?";
 
   const navItems = [
     { href: "/dashboard" as const, label: t("navOverview"), icon: <IconOverview /> },
-    { href: "/dashboard/profile" as const, label: t("navProfile"), icon: <IconProfile /> },
     { href: "/dashboard/teams" as const, label: t("navTeams"), icon: <IconTeams /> },
     { href: "/dashboard/tournaments" as const, label: t("navTournaments"), icon: <IconTournaments /> },
     { href: "/dashboard/events" as const, label: t("navEvents"), icon: <IconEvents /> },
@@ -111,106 +88,30 @@ export default function DashboardSidebar({
       : []),
   ];
 
-  // Bottom nav shows the 5 most-used items (wallet/settings/roles accessible via desktop)
-  const mobileNavItems = [
-    { href: "/dashboard" as const, label: t("navOverview"), icon: <IconOverview /> },
-    { href: "/dashboard/teams" as const, label: t("navTeams"), icon: <IconTeams /> },
-    { href: "/dashboard/tournaments" as const, label: t("navTournaments"), icon: <IconTournaments /> },
-    { href: "/dashboard/events" as const, label: t("navEvents"), icon: <IconEvents /> },
-    { href: "/dashboard/profile" as const, label: t("navProfile"), icon: <IconProfile /> },
-  ];
-
-  async function handleSignOut() {
-    await signOut();
-    router.push("/auth/signin");
-  }
-
   function isActive(href: string) {
     return href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(href);
   }
 
   return (
-    <>
-      {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-60 shrink-0 bg-white border-r border-zinc-200 flex-col sticky top-16 h-[calc(100vh-4rem)]">
-
-        {/* User info */}
-        <div className="px-4 py-5 border-b border-zinc-100">
-          <div className="flex items-center gap-3">
-            <span className="w-9 h-9 rounded-full bg-[#e21d12] flex items-center justify-center text-white text-sm font-bold shrink-0">
-              {initial}
-            </span>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-zinc-900 truncate">{user.name}</p>
-              <p className="text-xs text-zinc-400 truncate">{user.email}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Nav */}
-        <nav className="flex-1 px-3 py-4 flex flex-col gap-1 overflow-y-auto">
-          {navItems.map(({ href, label, icon }) => (
-            <Link
-              key={href}
-              href={href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                isActive(href)
-                  ? "bg-red-50 text-[#e21d12]"
-                  : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
-              }`}
-            >
-              <span className={isActive(href) ? "text-[#e21d12]" : "text-zinc-400"}>
-                {icon}
-              </span>
-              {label}
-            </Link>
-          ))}
-        </nav>
-
-        {/* Organizer dashboard — a distinct switch-context action, not part of
-            the regular nav (it always exists: /organizer itself handles the
-            zero-organizations case with a "create your organization" prompt,
-            so this doubles as the entry point to become an organizer too). */}
-        <div className="px-3 pt-3 border-t border-zinc-100">
+    <aside className="hidden md:flex w-60 shrink-0 bg-white border-r border-zinc-200 flex-col sticky top-0 self-start">
+      <nav className="px-3 py-4 flex flex-col gap-1">
+        {navItems.map(({ href, label, icon }) => (
           <Link
-            href="/organizer"
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 transition-colors"
+            key={href}
+            href={href}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              isActive(href)
+                ? "bg-red-50 text-[#e21d12]"
+                : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
+            }`}
           >
-            <span className="text-zinc-400"><IconOrganizer /></span>
-            {t("navOrganizer")}
-          </Link>
-        </div>
-
-        {/* Sign out */}
-        <div className="px-3 pb-4 border-t border-zinc-100 pt-3">
-          <button
-            onClick={handleSignOut}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-zinc-500 hover:bg-zinc-50 hover:text-zinc-800 transition-colors"
-          >
-            <span className="text-zinc-400"><IconSignOut /></span>
-            {t("signOut")}
-          </button>
-        </div>
-
-      </aside>
-
-      {/* Mobile bottom navigation */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-zinc-200">
-        <div className="flex items-stretch h-16">
-          {mobileNavItems.map(({ href, label, icon }) => (
-            <Link
-              key={href}
-              href={href}
-              className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 transition-colors ${
-                isActive(href) ? "text-[#e21d12]" : "text-zinc-400"
-              }`}
-            >
+            <span className={isActive(href) ? "text-[#e21d12]" : "text-zinc-400"}>
               {icon}
-              <span className="text-[10px] font-semibold leading-none">{label}</span>
-            </Link>
-          ))}
-        </div>
+            </span>
+            {label}
+          </Link>
+        ))}
       </nav>
-    </>
+    </aside>
   );
 }

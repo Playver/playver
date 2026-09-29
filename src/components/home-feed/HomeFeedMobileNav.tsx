@@ -32,42 +32,61 @@ const itemClass = "flex-1 flex flex-col items-center justify-center gap-0.5 py-1
 export default function HomeFeedMobileNav({
   activeView,
   onNavigate,
+  profileHref = "/dashboard/profile",
 }: {
-  activeView: FeedView;
-  onNavigate: (view: FeedView) => void;
+  // Both omitted -> Home/Events render as real links (to "/"/"/events")
+  // instead of calling onNavigate — see FeedSidebar's identical standalone
+  // mode, which this mirrors for the mobile bottom bar.
+  activeView?: FeedView;
+  onNavigate?: (view: FeedView) => void;
+  profileHref?: string;
 }) {
   const t = useTranslations("HomeFeed");
   const pathname = usePathname();
 
   function isLinkActive(href: string) {
-    return pathname.startsWith(href);
+    return href === "/" ? pathname === "/" : pathname.startsWith(href);
   }
 
   return (
     <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-zinc-200">
       <div className="flex items-stretch h-16">
-        <button
-          type="button"
-          onClick={() => onNavigate("home")}
-          className={`${itemClass} ${activeView === "home" ? "text-[#e21d12]" : "text-zinc-400"}`}
-        >
-          <IconHome />
-          <span className="text-[10px] font-semibold leading-none">{t("navHome")}</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => onNavigate("events")}
-          className={`${itemClass} ${activeView === "events" ? "text-[#e21d12]" : "text-zinc-400"}`}
-        >
-          <IconEvents />
-          <span className="text-[10px] font-semibold leading-none">{t("navEvents")}</span>
-        </button>
+        {onNavigate ? (
+          <button
+            type="button"
+            onClick={() => onNavigate("home")}
+            className={`${itemClass} ${activeView === "home" ? "text-[#e21d12]" : "text-zinc-400"}`}
+          >
+            <IconHome />
+            <span className="text-[10px] font-semibold leading-none">{t("navHome")}</span>
+          </button>
+        ) : (
+          <Link href="/" className={`${itemClass} ${isLinkActive("/") ? "text-[#e21d12]" : "text-zinc-400"}`}>
+            <IconHome />
+            <span className="text-[10px] font-semibold leading-none">{t("navHome")}</span>
+          </Link>
+        )}
+        {onNavigate ? (
+          <button
+            type="button"
+            onClick={() => onNavigate("events")}
+            className={`${itemClass} ${activeView === "events" ? "text-[#e21d12]" : "text-zinc-400"}`}
+          >
+            <IconEvents />
+            <span className="text-[10px] font-semibold leading-none">{t("navEvents")}</span>
+          </button>
+        ) : (
+          <Link href="/events" className={`${itemClass} ${isLinkActive("/events") ? "text-[#e21d12]" : "text-zinc-400"}`}>
+            <IconEvents />
+            <span className="text-[10px] font-semibold leading-none">{t("navEvents")}</span>
+          </Link>
+        )}
         <CreateEventButton
           label={t("createButton")}
           icon={<IconPlus />}
           className={`${itemClass} text-[#e21d12] text-[10px] font-semibold leading-none`}
         />
-        <Link href="/dashboard/profile" className={`${itemClass} ${isLinkActive("/dashboard/profile") ? "text-[#e21d12]" : "text-zinc-400"}`}>
+        <Link href={profileHref} className={`${itemClass} ${isLinkActive(profileHref) ? "text-[#e21d12]" : "text-zinc-400"}`}>
           <IconProfile />
           <span className="text-[10px] font-semibold leading-none">{t("navProfile")}</span>
         </Link>

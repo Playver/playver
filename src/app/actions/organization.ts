@@ -22,6 +22,7 @@ import { pool, withTransaction } from "@/lib/db";
 import { slugify } from "@/lib/slug";
 import { hasPermission, type OrgRole, type OrgPermission } from "@/lib/organizer-permissions";
 import { ForbiddenError } from "@/lib/organizer-errors";
+import type { OrganizationModuleKey } from "@/lib/organization-modules";
 
 // Which org a multi-org user is currently "acting as". Every read/write in this
 // file re-verifies membership against the DB before trusting this cookie value
@@ -55,11 +56,12 @@ export type Organization = {
   city: string | null;
   province: string | null;
   country: string | null;
+  enabledModules: string[];
 };
 
 const ORGANIZATION_COLUMNS = `o.id, o.name, o.slug, o."logoUrl", o."coverImageUrl", o."shortDescription",
      o.mission, o."publicEmail", o.phone, o.sports, o."primaryLanguage", o."publicationStatus",
-     o."organizationType", o.city, o.province, o.country`;
+     o."organizationType", o.city, o.province, o.country, o."enabledModules"`;
 
 function mapOrganizationRow(row: {
   id: string;
@@ -78,6 +80,7 @@ function mapOrganizationRow(row: {
   city: string | null;
   province: string | null;
   country: string | null;
+  enabledModules: string[] | null;
 }): Organization {
   return {
     id: row.id,
@@ -96,6 +99,7 @@ function mapOrganizationRow(row: {
     city: row.city,
     province: row.province,
     country: row.country,
+    enabledModules: row.enabledModules ?? [],
   };
 }
 
@@ -119,6 +123,33 @@ export async function getUserOrganizations(): Promise<OrganizationSummary[]> {
   );
 
   return result.rows as OrganizationSummary[];
+}
+
+export type OrganizationSummaryWithMemberCount = OrganizationSummary & { memberCount: number };
+
+// Separate from getUserOrganizations() (used by organizer/layout.tsx's org
+// switcher, which doesn't need this) — the Manage Organizations page wants a
+// member-count column, so this batches a second count query against the same
+// org IDs rather than changing the existing function's return shape.
+export async function getUserOrganizationsWithMemberCount(): Promise<OrganizationSummaryWithMemberCount[]> {
+  const organizations = await getUserOrganizations();
+  if (organizations.length === 0) return [];
+
+  const counts = await pool.query(
+    `SELECT "organizationId", COUNT(*)::int AS count
+     FROM "organization_membership"
+     WHERE status = 'active' AND "organizationId" = ANY($1)
+     GROUP BY "organizationId"`,
+    [organizations.map((org) => org.id)]
+  );
+  const countByOrganizationId = new Map<string, number>(
+    counts.rows.map((row) => [row.organizationId as string, Number(row.count)])
+  );
+
+  return organizations.map((org) => ({
+    ...org,
+    memberCount: countByOrganizationId.get(org.id) ?? 0,
+  }));
 }
 
 // Resolves which organization the caller is currently viewing. The cookie is
@@ -194,6 +225,25 @@ export async function requireOrganizationPermission(
   return { userId: session.user.id, organization: active.organization, role: active.role };
 }
 
+// Turns on one opt-in module for the active org (e.g. from the organizer
+// sidebar's "+ Add to Manage" flow) — additive/idempotent, so re-enabling an
+// already-enabled module is a no-op rather than an error. Gated the same as
+// the wizard's own module step (updateOrganizationDraft), since this is just
+// a narrower, single-column version of the same write.
+export async function enableOrganizationModule(
+  moduleKey: OrganizationModuleKey
+): Promise<{ error?: string }> {
+  const { organization } = await requireOrganizationPermission("MANAGE_ORGANIZATION_PROFILE");
+
+  await pool.query(
+    `UPDATE "organization" SET "enabledModules" = array_append("enabledModules", $1), "updatedAt" = NOW()
+     WHERE id = $2 AND NOT ($1 = ANY("enabledModules"))`,
+    [moduleKey, organization.id]
+  );
+
+  return {};
+}
+
 // ---------------------------------------------------------------------------
 // Create-organization wizard. Writes progressively: nothing is
 // persisted until Identity (step 2), since name/slug are NOT NULL; every step
@@ -224,6 +274,7 @@ export type OrganizationDraftFields = Partial<{
   sports: string[];
   slug: string;
   shortDescription: string;
+  organizationSize: string;
   // Branding (step 3)
   logoUrl: string | null;
   coverImageUrl: string | null;
@@ -268,6 +319,7 @@ const DRAFT_COLUMN_TYPES: Record<keyof OrganizationDraftFields, "text" | "text[]
   sports: "text[]",
   slug: "text",
   shortDescription: "text",
+  organizationSize: "text",
   logoUrl: "text",
   coverImageUrl: "text",
   slogan: "text",
@@ -298,6 +350,7 @@ const DRAFT_COLUMN_TYPES: Record<keyof OrganizationDraftFields, "text" | "text[]
 };
 
 export type OrganizationDraftState = Organization & {
+  organizationSize: string | null;
   legalName: string | null;
   registrationNumber: string | null;
   organizationStatus: string | null;
@@ -350,6 +403,7 @@ export async function createOrganizationDraft(input: {
   primaryLanguage: string;
   sports: string[];
   shortDescription: string;
+  organizationSize?: string;
   desiredSlug?: string;
   wizardStep?: number;
 }): Promise<{ organizationId?: string; slug?: string; error?: string }> {
@@ -376,11 +430,12 @@ export async function createOrganizationDraft(input: {
     await client.query(
       `INSERT INTO "organization"
          (id, name, slug, "organizationType", city, province, country, "primaryLanguage", sports,
-          "shortDescription", "publicationStatus", "wizardStep")
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'draft',$11)`,
+          "shortDescription", "organizationSize", "publicationStatus", "wizardStep")
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'draft',$12)`,
       [
         organizationId, name, slug, input.organizationType, input.city, input.province,
         input.country, input.primaryLanguage, input.sports, input.shortDescription,
+        input.organizationSize ?? null,
         input.wizardStep ?? 2,
       ]
     );
@@ -511,6 +566,66 @@ export async function getDraftOrganizations(): Promise<DraftOrganizationSummary[
     }));
 }
 
+// Shared row -> OrganizationDraftState mapping, used both by the wizard's
+// resume flow (getOrganizationDraftState) and the org Settings/Profile
+// pages' read (getActiveOrganizationProfile) — same full-row shape either
+// way, just gated/fetched differently.
+function mapDraftRow(
+  row: Record<string, unknown>,
+  locations: OrganizationLocation[]
+): OrganizationDraftState {
+  return {
+    ...mapOrganizationRow(row as Parameters<typeof mapOrganizationRow>[0]),
+    organizationSize: row.organizationSize as string | null,
+    legalName: row.legalName as string | null,
+    registrationNumber: row.registrationNumber as string | null,
+    organizationStatus: row.organizationStatus as string | null,
+    insuranceProvider: row.insuranceProvider as string | null,
+    insurancePolicyNumber: row.insurancePolicyNumber as string | null,
+    vision: row.vision as string | null,
+    history: row.history as string | null,
+    yearFounded: row.yearFounded as number | null,
+    ageGroups: (row.ageGroups as string[]) ?? [],
+    values: (row.values as string[]) ?? [],
+    affiliations: (row.affiliations as string[]) ?? [],
+    website: row.website as string | null,
+    slogan: row.slogan as string | null,
+    brandColor: row.brandColor as string | null,
+    socialLinks: (row.socialLinks as Record<string, string>) ?? {},
+    refundPolicyUrl: row.refundPolicyUrl as string | null,
+    refundPolicyText: row.refundPolicyText as string | null,
+    privacyPolicyUrl: row.privacyPolicyUrl as string | null,
+    privacyPolicyText: row.privacyPolicyText as string | null,
+    codeOfConductUrl: row.codeOfConductUrl as string | null,
+    codeOfConductText: row.codeOfConductText as string | null,
+    enabledModules: (row.enabledModules as string[]) ?? [],
+    wizardStep: row.wizardStep as number,
+    locations,
+  };
+}
+
+// Read-only full profile fetch for the organizer Profile/Settings pages —
+// same shape as the wizard's draft state (mapDraftRow), but gated the same
+// way as every other organizer page (throws ForbiddenError via
+// requireOrganizationPermission) rather than returning {error}, and without
+// getOrganizationDraftState's wizard-resume side effect of flipping the
+// active-org cookie.
+export async function getActiveOrganizationProfile(): Promise<OrganizationDraftState> {
+  const { organization } = await requireOrganizationPermission("MANAGE_ORGANIZATION_PROFILE");
+
+  const orgResult = await pool.query(`SELECT * FROM "organization" WHERE id = $1`, [organization.id]);
+  const row = orgResult.rows[0];
+  if (!row) throw new Error("Organization not found");
+
+  const locationsResult = await pool.query(
+    `SELECT id, name, "streetAddress", city, province, "postalCode", country
+     FROM "organization_location" WHERE "organizationId" = $1 ORDER BY "createdAt" ASC`,
+    [organization.id]
+  );
+
+  return mapDraftRow(row, locationsResult.rows as OrganizationLocation[]);
+}
+
 // Hydrates a specific draft for resume. Unlike requireOrganizationPermission,
 // this checks membership on the *requested* org directly rather than
 // whatever's currently active — the user may be resuming a draft that isn't
@@ -548,33 +663,7 @@ export async function getOrganizationDraftState(
   });
 
   return {
-    draft: {
-      ...mapOrganizationRow(row),
-      legalName: row.legalName,
-      registrationNumber: row.registrationNumber,
-      organizationStatus: row.organizationStatus,
-      insuranceProvider: row.insuranceProvider,
-      insurancePolicyNumber: row.insurancePolicyNumber,
-      vision: row.vision,
-      history: row.history,
-      yearFounded: row.yearFounded,
-      ageGroups: row.ageGroups ?? [],
-      values: row.values ?? [],
-      affiliations: row.affiliations ?? [],
-      website: row.website,
-      slogan: row.slogan,
-      brandColor: row.brandColor,
-      socialLinks: row.socialLinks ?? {},
-      refundPolicyUrl: row.refundPolicyUrl,
-      refundPolicyText: row.refundPolicyText,
-      privacyPolicyUrl: row.privacyPolicyUrl,
-      privacyPolicyText: row.privacyPolicyText,
-      codeOfConductUrl: row.codeOfConductUrl,
-      codeOfConductText: row.codeOfConductText,
-      enabledModules: row.enabledModules ?? [],
-      wizardStep: row.wizardStep,
-      locations: locationsResult.rows as OrganizationLocation[],
-    },
+    draft: mapDraftRow(row, locationsResult.rows as OrganizationLocation[]),
   };
 }
 
@@ -587,4 +676,44 @@ export async function publishOrganization(): Promise<{ error?: string }> {
   );
 
   return {};
+}
+
+// ---------------------------------------------------------------------------
+// Public organization profile (/organizations/[slug]) — deliberately the one
+// read in this file with NO session/permission check, since anyone (including
+// logged-out visitors) can load a published org's public page. Returns null
+// for both "no org with this slug" and "org exists but publicationStatus
+// isn't 'published'" — the caller (the page component) 404s either way via
+// notFound(), so a guessed/stale slug for someone's in-progress draft can't
+// be distinguished from a slug that was never registered. Do not relax this
+// gate; it's the only thing standing between a WIP draft org and public view.
+// ---------------------------------------------------------------------------
+
+export type PublicOrganizationProfile = Organization & {
+  slogan: string | null;
+  brandColor: string | null;
+  website: string | null;
+  socialLinks: Record<string, string>;
+  locations: OrganizationLocation[];
+};
+
+export async function getPublicOrganizationProfile(slug: string): Promise<PublicOrganizationProfile | null> {
+  const orgResult = await pool.query(`SELECT * FROM "organization" WHERE slug = $1`, [slug]);
+  const row = orgResult.rows[0];
+  if (!row || row.publicationStatus !== "published") return null;
+
+  const locationsResult = await pool.query(
+    `SELECT id, name, "streetAddress", city, province, "postalCode", country
+     FROM "organization_location" WHERE "organizationId" = $1 ORDER BY "createdAt" ASC`,
+    [row.id]
+  );
+
+  return {
+    ...mapOrganizationRow(row),
+    slogan: row.slogan ?? null,
+    brandColor: row.brandColor ?? null,
+    website: row.website ?? null,
+    socialLinks: row.socialLinks ?? {},
+    locations: locationsResult.rows as OrganizationLocation[],
+  };
 }

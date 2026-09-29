@@ -21,6 +21,7 @@ import {
 } from "@/app/actions/tournament";
 import type { TournamentTeam, TournamentJoinRequest } from "@/app/actions/tournament";
 import { formatPrice } from "@/lib/format-price";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 function Avatar({ name, image, size = 8 }: { name: string; image?: string | null; size?: number }) {
   const cls = `w-${size} h-${size} rounded-full object-cover`;
@@ -51,6 +52,7 @@ export function TournamentCaptainPanel({
   const [copiedLink, setCopiedLink] = useState(false);
   const [error, setError] = useState("");
   const [paymentLoading, setPaymentLoading] = useState(false);
+  const [showPayConfirm, setShowPayConfirm] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(team.name);
 
@@ -67,11 +69,15 @@ export function TournamentCaptainPanel({
     });
   }
 
-  async function handlePay() {
-    // Confirm before redirecting to Checkout — a native confirm() is the
-    // same "are you sure" gate already used for disband/leave in this file,
-    // so this isn't spent silently on click.
-    if (!confirm(t("payConfirm", { amount: formatPrice(price) }))) return;
+  function handlePay() {
+    // Opens the branded ConfirmDialog below instead of firing the checkout
+    // request directly — see confirmPay for the actual redirect, triggered
+    // once the user confirms in that dialog.
+    setShowPayConfirm(true);
+  }
+
+  async function confirmPay() {
+    setShowPayConfirm(false);
     setPaymentLoading(true);
     setError("");
     try {
@@ -317,6 +323,17 @@ export function TournamentCaptainPanel({
       )}
 
       {error && <p className="text-xs font-semibold text-red-600">{error}</p>}
+
+      <ConfirmDialog
+        open={showPayConfirm}
+        title={t("payConfirmTitle")}
+        message={t("payConfirm", { amount: formatPrice(price) })}
+        confirmLabel={t("payConfirmButton")}
+        cancelLabel={t("cancel")}
+        onConfirm={confirmPay}
+        onCancel={() => setShowPayConfirm(false)}
+        confirming={paymentLoading}
+      />
     </div>
   );
 }

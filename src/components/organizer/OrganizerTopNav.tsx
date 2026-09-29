@@ -1,18 +1,22 @@
 "use client";
 
-// Top bar for every /organizer/* page (rendered by organizer/layout.tsx):
-// logo, org switcher, "new org" launcher, and the user menu. "Public View"
-// toggle and notifications are permanently disabled placeholders (not wired
-// to anything yet), matching the ComingSoonPanel pattern used elsewhere in
-// the organizer console.
+// Top bar for every /organizer/* page (rendered by organizer/layout.tsx).
+// The Playver logo, org switcher, and "New Organization" launcher that used
+// to live here were removed — the logo is already in the outer app rail
+// (OrganizerAppShell -> FeedSidebar), and switching/creating orgs now lives
+// in OrganizerSidebar's own header (OrganizerSidebarSwitcher), so having
+// them here too was pure duplication. What's left: language toggle,
+// "Public" (navigates, same tab, to the org's public profile page —
+// /organizations/[slug], see src/app/[locale]/organizations/[slug]/page.tsx
+// — but only once the org is actually published: getPublicOrganizationProfile()
+// 404s a draft org for anyone, by design, so a draft org's own owner needs an
+// explicit reason the link is disabled here rather than just landing on a
+// bare 404), notifications (still a permanently disabled placeholder, not
+// wired to anything yet), and the org-role user menu.
 import { useTranslations } from "next-intl";
-import Image from "next/image";
-import { Link, useRouter } from "@/i18n/routing";
-import OrganizerSwitcher from "@/components/organizer/OrganizerSwitcher";
 import OrganizerUserMenu from "@/components/organizer/OrganizerUserMenu";
-import CreateOrganizationLauncher from "@/components/organizer/create-wizard/CreateOrganizationLauncher";
-import { setActiveOrganization } from "@/app/actions/organization";
-import type { OrganizationSummary } from "@/app/actions/organization";
+import PublicAdminToggle from "@/components/organizer/PublicAdminToggle";
+import LanguageToggle from "@/components/layout/LanguageToggle";
 import type { OrgRole } from "@/lib/organizer-permissions";
 
 const IconBell = () => (
@@ -23,64 +27,37 @@ const IconBell = () => (
 );
 
 export default function OrganizerTopNav({
-  organizations,
-  activeOrganizationId,
+  organizationId,
+  organizationSlug,
+  organizationPublished,
   role,
   userName,
   userEmail,
   userImage,
 }: {
-  organizations: OrganizationSummary[];
-  activeOrganizationId: string;
+  organizationId: string;
+  organizationSlug: string;
+  organizationPublished: boolean;
   role: OrgRole;
   userName: string;
   userEmail: string;
   userImage: string | null;
 }) {
   const t = useTranslations("Organizer");
-  const router = useRouter();
-
-  async function handlePublished(organizationId: string) {
-    await setActiveOrganization(organizationId);
-    router.refresh();
-  }
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-white border-b border-zinc-200">
+    <header className="sticky top-16 lg:top-0 z-40 w-full bg-white border-b border-zinc-200">
         <div className="h-16 px-4 md:px-6 flex items-center gap-3">
-          <Link href="/" className="shrink-0">
-            <Image src="/logo.png" alt="Playver" width={90} height={36} priority className="object-contain" />
-          </Link>
-
-          <div className="w-56 shrink-0 hidden sm:block">
-            <OrganizerSwitcher organizations={organizations} activeOrganizationId={activeOrganizationId} />
-          </div>
-
-          <CreateOrganizationLauncher
-            onPublished={handlePublished}
-            trigger={(open) => (
-              <button
-                type="button"
-                onClick={open}
-                className="hidden md:flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white rounded-full bg-[#e21d12] hover:bg-[#d41810] transition-colors shrink-0"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-                {t("newOrganization")}
-              </button>
-            )}
-          />
-
           <div className="ml-auto flex items-center gap-2 shrink-0">
-            <div className="hidden lg:flex items-center rounded-full border border-zinc-200 p-0.5 text-xs font-semibold">
-              <span
-                className="px-3 py-1.5 rounded-full text-zinc-300 cursor-not-allowed"
-                title={t("publicViewComingSoon")}
-              >
-                {t("publicView")}
-              </span>
-              <span className="px-3 py-1.5 rounded-full bg-zinc-900 text-white">{t("adminView")}</span>
+            <LanguageToggle />
+
+            <div className="hidden lg:block">
+              <PublicAdminToggle
+                mode="admin"
+                organizationId={organizationId}
+                organizationSlug={organizationSlug}
+                organizationPublished={organizationPublished}
+              />
             </div>
 
             <button

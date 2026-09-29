@@ -8,6 +8,44 @@ import { Link } from "@/i18n/routing";
 import { getJoinedEvents, getMyEvents } from "@/app/actions/event";
 import { getJoinedTeams, getMyTeams } from "@/app/actions/team";
 
+// Sized via 1em so each usage just sets a Tailwind text-size class on its
+// wrapping element (badge vs. large empty-state icon) rather than needing a
+// size prop per icon.
+function IconCalendar() {
+  return (
+    <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+    </svg>
+  );
+}
+
+function IconUsers() {
+  return (
+    <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  );
+}
+
+function IconMedal() {
+  return (
+    <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="15" r="6" /><path d="m9 10-3-6" /><path d="m15 10 3-6" />
+      <path d="M11.5 12.5 10 15l1.5 1L12 18l.5-2 1.5-1-1.5-2.5Z" />
+    </svg>
+  );
+}
+
+function IconSearch() {
+  return (
+    <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  );
+}
+
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en", {
     month: "short",
@@ -36,9 +74,9 @@ export default async function DashboardPage() {
   const gamesPlayed = allEvents.filter((event) => event.status === "active" && new Date(event.endDateTime) < now).length;
 
   const stats = [
-    { label: t("statUpcoming"), value: String(upcomingEvents.length), icon: "📅" },
-    { label: t("statTeams"), value: String(uniqueTeamIds.size), icon: "👥" },
-    { label: t("statPlayed"), value: String(gamesPlayed), icon: "🏅" },
+    { label: t("statUpcoming"), value: String(upcomingEvents.length), icon: <IconCalendar /> },
+    { label: t("statTeams"), value: String(uniqueTeamIds.size), icon: <IconUsers /> },
+    { label: t("statPlayed"), value: String(gamesPlayed), icon: <IconMedal /> },
   ];
 
   return (
@@ -61,7 +99,7 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         {stats.map(({ label, value, icon }) => (
           <div key={label} className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-6 flex items-center gap-4">
-            <span className="text-3xl">{icon}</span>
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#e21d12]/10 text-xl text-[#e21d12]">{icon}</span>
             <div>
               <p className="text-2xl font-bold text-zinc-900">{value}</p>
               <p className="text-sm text-zinc-500">{label}</p>
@@ -83,7 +121,7 @@ export default async function DashboardPage() {
           </div>
           {upcomingEvents.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-center gap-2">
-              <span className="text-4xl">🔍</span>
+              <span className="text-4xl text-zinc-300"><IconSearch /></span>
               <p className="text-sm text-zinc-500">{t("noUpcoming")}</p>
               <Link
                 href="/dashboard/events"
@@ -114,7 +152,7 @@ export default async function DashboardPage() {
           </div>
           {uniqueTeamIds.size === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-center gap-2">
-              <span className="text-4xl">👥</span>
+              <span className="text-4xl text-zinc-300"><IconUsers /></span>
               <p className="text-sm text-zinc-500">{t("noTeams")}</p>
               <Link
                 href="/dashboard/teams"

@@ -72,7 +72,7 @@ function TimeSelect({
 }
 
 const SPORTS = ["Soccer","Basketball","Volleyball","Pickleball","Tennis","Hockey","Baseball","Cricket","Rugby","Other"];
-const EVENT_TYPES = ["League","Tournament","Pickup Game","Training / Practice","Activity"];
+const EVENT_TYPES = ["League","Tournament","Pickup Game","Training / Practice","Activity","Tryouts","Camps","Community","Galas"];
 const FIELD_TYPES: { value: FormFieldType; labelKey: string }[] = [
   { value: "text",     labelKey: "customFormTypeText" },
   { value: "number",   labelKey: "customFormTypeNumber" },

@@ -1,9 +1,15 @@
-// Shared state/types for the 10-step create-organization wizard
-// (CreateOrganizationWizard.tsx + Step1Type.tsx..Step10Review.tsx). One flat
-// WizardState object is threaded through every step via StepProps
-// (state + update()); each step only reads/writes its own slice of it. The
-// wizard persists incrementally to the DB as an in-progress "draft" org, so
-// wizardStateFromDraft() rehydrates this same shape when a user resumes.
+// Shared state/types for the 4-step create-organization wizard
+// (CreateOrganizationWizard.tsx + Step1Profile/Step2Manage/Step3Agreement/
+// Step4Done). One flat WizardState object is threaded through every step via
+// StepProps (state + update()); each step only reads/writes its own slice of
+// it. The wizard persists incrementally to the DB as an in-progress "draft"
+// org, so wizardStateFromDraft() rehydrates this same shape when a user
+// resumes. Note: WizardState still carries every field from the old 10-step
+// wizard (mission/legal/contact/etc.) even though most of them are no longer
+// collected IN the wizard — the org Settings/Profile pages
+// (src/app/[locale]/organizer/{profile,settings}/page.tsx) reuse the same
+// updateOrganizationDraft()/OrganizationDraftFields machinery outside the
+// wizard, so those fields still need a home on this type.
 import type { OrgRole } from "@/lib/organizer-permissions";
 import type { LocationInput, OrganizationDraftState } from "@/app/actions/organization";
 import { DEFAULT_ENABLED_MODULES } from "@/lib/organization-modules";
@@ -25,6 +31,7 @@ export type WizardState = {
   furthestStep: number;
 
   organizationType: string;
+  organizationSize: string;
 
   name: string;
   city: string;
@@ -96,6 +103,7 @@ export function createInitialWizardState(): WizardState {
     organizationId: null,
     furthestStep: 1,
     organizationType: "",
+    organizationSize: "",
     name: "",
     city: "",
     province: "",
@@ -151,8 +159,14 @@ export function wizardStateFromDraft(draft: OrganizationDraftState): WizardState
   const social = draft.socialLinks ?? {};
   return {
     organizationId: draft.id,
-    furthestStep: draft.wizardStep,
+    // Reset to 1 rather than draft.wizardStep: the wizard was rebuilt from 10
+    // steps down to 4, so an old draft's stored step position (which could be
+    // anywhere from 1-10 under the old scheme) has no valid mapping onto the
+    // new 4-step rail. Only the field DATA below is still meaningfully
+    // resumed — see CreateOrganizationWizard.tsx's currentStep init.
+    furthestStep: 1,
     organizationType: draft.organizationType ?? "",
+    organizationSize: draft.organizationSize ?? "",
     name: draft.name,
     city: draft.city ?? "",
     province: draft.province ?? "",
@@ -215,6 +229,8 @@ export const SPORTS_OPTIONS = [
   "Swimming", "Track & Field", "Gymnastics", "Martial Arts", "Cycling", "Rugby",
   "American Football", "Lacrosse", "Other",
 ];
+
+export const ORG_SIZE_OPTIONS = ["1-10", "11-50", "51-200", "200+"];
 
 export const COUNTRY_OPTIONS = ["Canada", "United States", "Other"];
 export const LANGUAGE_OPTIONS = ["English", "French", "Spanish", "Other"];
