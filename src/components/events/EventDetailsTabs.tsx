@@ -880,7 +880,7 @@ export default function EventDetailsTabs({
             <MetricCard icon={<span>▣</span>} label={t("startDate")} value={`${formatDate(event.startDateTime)} · ${formatTime(event.startDateTime)}`} />
             <MetricCard icon={<span>▣</span>} label={t("endDate")} value={`${formatDate(event.endDateTime)} · ${formatTime(event.endDateTime)}`} />
             <MetricCard icon={<span>⌖</span>} label={t("location")} value={event.location} />
-            <MetricCard icon={<span>♟</span>} label={event.eventType === "Tournament" ? t("tabTeams") : t("tabParticipants")} value={`${event.participantCount}/${capacity || "-"}`} />
+            <MetricCard icon={<span>♟</span>} label={event.registrationMode === "team" ? t("tabTeams") : t("tabParticipants")} value={`${event.participantCount}/${capacity || "-"}`} />
           </div>
           <div className="grid gap-6 lg:grid-cols-2">
             <section>

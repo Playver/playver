@@ -9,7 +9,7 @@ export default async function DashboardEventsPage() {
   const t = await getTranslations("DashboardEvents");
   const [myEvents, joinedEvents] = await Promise.all([getMyLegacyEvents(), getJoinedEvents()]);
   const joinedLabel = (event: (typeof myEvents)[number]) => {
-    const isTournament = event.eventType === "Tournament";
+    const isTournament = event.registrationMode === "team";
     if (isTournament) {
       return event.capacity
         ? t("teamsProgress", { joined: event.participantCount, capacity: event.capacity })

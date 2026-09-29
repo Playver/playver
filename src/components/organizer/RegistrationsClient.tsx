@@ -68,7 +68,7 @@ export default function RegistrationsClient({ events }: { events: OrganizerEvent
   const [refundError, setRefundError] = useState<{ id: string; message: string } | null>(null);
   const data = fetchState.data;
   const loadError = fetchState.error;
-  const isTournament = data?.event.eventType === "Tournament";
+  const isTournament = data?.event.registrationMode === "team";
 
   const formatDate = (value: string) =>
     new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
@@ -186,7 +186,7 @@ export default function RegistrationsClient({ events }: { events: OrganizerEvent
             {events.map((event) => (
               <option key={event.id} value={event.id}>
                 {event.title} — {formatDate(event.startDateTime)}
-                {event.eventType === "Tournament" ? ` ${t("registrationsTournamentTag")}` : ""}
+                {event.registrationMode === "team" ? ` ${t("registrationsTournamentTag")}` : ""}
               </option>
             ))}
           </select>

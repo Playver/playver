@@ -33,7 +33,7 @@ export default async function OrganizerEventsPage() {
   }
 
   const joinedLabel = (event: EventItem) => {
-    const isTournament = event.eventType === "Tournament";
+    const isTournament = event.registrationMode === "team";
     if (isTournament) {
       return event.capacity
         ? tEvents("teamsProgress", { joined: event.participantCount, capacity: event.capacity })

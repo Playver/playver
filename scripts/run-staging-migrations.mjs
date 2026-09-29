@@ -36,6 +36,10 @@ if (!STAGING_DATABASE_URL) {
 const MIGRATION_SCRIPTS = [
   "migrate.mjs",
   "migrate-teams-events.mjs",
+  // Backfills registrationMode='team' on existing eventType='Tournament'
+  // rows — only needs the base event table from migrate-teams-events.mjs
+  // above, safe to run this early.
+  "migrate-event-generalization.mjs",
   "migrate-team-members.mjs",
   "migrate-event-participants.mjs",
   "migrate-payments.mjs",

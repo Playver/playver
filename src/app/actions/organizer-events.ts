@@ -25,7 +25,7 @@ export async function getOrganizationEventsFull(): Promise<EventItem[]> {
 
   const result = await pool.query(
     `SELECT e.*, COALESCE(o.name, u.name) as "organizerName",
-       CASE WHEN e."eventType" = 'Tournament'
+       CASE WHEN e."registrationMode" = 'team'
          THEN (SELECT COUNT(*) FROM "tournament_team" tt WHERE tt."tournamentId" = e.id AND tt.status = 'active')
          ELSE COUNT(ep.id)
        END as "participantCount"

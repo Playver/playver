@@ -399,7 +399,7 @@ async function ensureTeamMemberTable() {
 
 async function checkCanRegister(tournamentId: string, userId: string) {
   const tournamentRes = await pool.query(
-    `SELECT id, status, "endDateTime", price, capacity, sport, location FROM "event" WHERE id = $1 AND "eventType" = 'Tournament'`,
+    `SELECT id, status, "endDateTime", price, capacity, sport, location FROM "event" WHERE id = $1 AND "registrationMode" = 'team'`,
     [tournamentId]
   );
   if (!tournamentRes.rows[0]) return { error: "Tournament not found" as string };

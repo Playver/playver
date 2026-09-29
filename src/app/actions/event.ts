@@ -32,6 +32,7 @@ import { ensureTournamentTables } from "@/lib/tournament-tables";
 import { requireOrganizationPermission } from "./organization";
 import { hasPermission, type OrgRole } from "@/lib/organizer-permissions";
 import { serializeEvent } from "@/lib/serialize-event";
+import { isTeamEvent } from "@/lib/event-type";
 
 let eventParticipantsTablePromise: Promise<void> | null = null;
 
@@ -140,11 +141,11 @@ async function authorizeEventManagement(
   userId: string
 ): Promise<
   | { error: "Event not found" | "Forbidden" }
-  | { event: { organizerId: string; organizationId: string | null; eventType: string; title: string; sport: string; location: string; startDateTime: Date | string } }
+  | { event: { organizerId: string; organizationId: string | null; registrationMode: string; title: string; sport: string; location: string; startDateTime: Date | string } }
 > {
   const [existing, roleRow] = await Promise.all([
     pool.query(
-      `SELECT "organizerId", "organizationId", "eventType", title, sport, location, "startDateTime" FROM "event" WHERE id = $1`,
+      `SELECT "organizerId", "organizationId", "registrationMode", title, sport, location, "startDateTime" FROM "event" WHERE id = $1`,
       [eventId]
     ),
     pool.query(`SELECT role FROM "user" WHERE id = $1`, [userId]),
@@ -244,7 +245,7 @@ export async function getEvents() {
   await ensureEventParticipantsTable();
   const result = await pool.query(
     `SELECT e.*, COALESCE(o.name, u.name) as "organizerName",
-       CASE WHEN e."eventType" = 'Tournament'
+       CASE WHEN e."registrationMode" = 'team'
          THEN (SELECT COUNT(*) FROM "tournament_team" tt WHERE tt."tournamentId" = e.id AND tt.status = 'active')
          ELSE COUNT(ep.id)
        END as "participantCount"
@@ -269,7 +270,7 @@ export async function getEventsByOrganization(organizationId: string) {
   await ensureEventParticipantsTable();
   const result = await pool.query(
     `SELECT e.*, COALESCE(o.name, u.name) as "organizerName",
-       CASE WHEN e."eventType" = 'Tournament'
+       CASE WHEN e."registrationMode" = 'team'
          THEN (SELECT COUNT(*) FROM "tournament_team" tt WHERE tt."tournamentId" = e.id AND tt.status = 'active')
          ELSE COUNT(ep.id)
        END as "participantCount"
@@ -296,7 +297,7 @@ export async function getTournamentEvents() {
      JOIN "user" u ON e."organizerId" = u.id
      LEFT JOIN "organization" o ON o.id = e."organizationId"
      LEFT JOIN "tournament_team" tt ON tt."tournamentId" = e.id AND tt.status = 'active'
-     WHERE e."eventType" = 'Tournament'
+     WHERE e."registrationMode" = 'team'
      GROUP BY e.id, u.name, o.name
      ORDER BY
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN 0 ELSE 1 END ASC,
@@ -318,7 +319,7 @@ export async function getMyTournaments() {
      JOIN "user" u ON e."organizerId" = u.id
      LEFT JOIN "organization" o ON o.id = e."organizationId"
      LEFT JOIN "tournament_team" tt ON tt."tournamentId" = e.id AND tt.status = 'active'
-     WHERE e."organizerId" = $1 AND e."eventType" = 'Tournament' AND e."organizationId" IS NULL
+     WHERE e."organizerId" = $1 AND e."registrationMode" = 'team' AND e."organizationId" IS NULL
      GROUP BY e.id, u.name, o.name
      ORDER BY
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN 0 ELSE 1 END ASC,
@@ -347,7 +348,7 @@ export async function getJoinedTournaments() {
          )
        )
      LEFT JOIN "tournament_team" all_tt ON all_tt."tournamentId" = e.id AND all_tt.status = 'active'
-     WHERE e."organizerId" <> $1 AND e."eventType" = 'Tournament'
+     WHERE e."organizerId" <> $1 AND e."registrationMode" = 'team'
      GROUP BY e.id, u.name, o.name
      ORDER BY
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN 0 ELSE 1 END ASC,
@@ -362,7 +363,7 @@ export async function getEventById(eventId: string) {
   await ensureEventParticipantsTable();
   const result = await pool.query(
     `SELECT e.*, COALESCE(o.name, u.name) as "organizerName",
-       CASE WHEN e."eventType" = 'Tournament'
+       CASE WHEN e."registrationMode" = 'team'
          THEN (SELECT COUNT(*) FROM "tournament_team" tt WHERE tt."tournamentId" = e.id AND tt.status = 'active')
          ELSE COUNT(ep.id)
        END as "participantCount"
@@ -384,7 +385,7 @@ export async function getMyEvents() {
 
   const result = await pool.query(
     `SELECT e.*, COALESCE(o.name, u.name) as "organizerName",
-       CASE WHEN e."eventType" = 'Tournament'
+       CASE WHEN e."registrationMode" = 'team'
          THEN (SELECT COUNT(*) FROM "tournament_team" tt WHERE tt."tournamentId" = e.id AND tt.status = 'active')
          ELSE COUNT(ep.id)
        END as "participantCount"
@@ -416,7 +417,7 @@ export async function getMyLegacyEvents() {
 
   const result = await pool.query(
     `SELECT e.*, COALESCE(o.name, u.name) as "organizerName",
-       CASE WHEN e."eventType" = 'Tournament'
+       CASE WHEN e."registrationMode" = 'team'
          THEN (SELECT COUNT(*) FROM "tournament_team" tt WHERE tt."tournamentId" = e.id AND tt.status = 'active')
          ELSE COUNT(ep.id)
        END as "participantCount"
@@ -442,7 +443,7 @@ export async function getJoinedEvents() {
 
   const result = await pool.query(
     `SELECT e.*, COALESCE(o.name, u.name) as "organizerName",
-       CASE WHEN e."eventType" = 'Tournament'
+       CASE WHEN e."registrationMode" = 'team'
          THEN (SELECT COUNT(*) FROM "tournament_team" tt WHERE tt."tournamentId" = e.id AND tt.status = 'active')
          ELSE (SELECT COUNT(*) FROM "event_participant" all_ep WHERE all_ep."eventId" = e.id)
        END as "participantCount"
@@ -499,7 +500,7 @@ export async function getTeamEvents(teamId: string): Promise<EventItem[]> {
   await ensureEventParticipantsTable();
   const result = await pool.query(
     `SELECT e.*, COALESCE(o.name, u.name) as "organizerName",
-       CASE WHEN e."eventType" = 'Tournament'
+       CASE WHEN e."registrationMode" = 'team'
          THEN (SELECT COUNT(*) FROM "tournament_team" tt WHERE tt."tournamentId" = e.id AND tt.status = 'active')
          ELSE (SELECT COUNT(*) FROM "event_participant" all_ep WHERE all_ep."eventId" = e.id)
        END as "participantCount"
@@ -1169,10 +1170,10 @@ export async function runEventRefundSweep(
   const pendingReview = new Set<string>();
   const failures: { payerName: string | null; amountCents: number; reason: string }[] = [];
 
-  const eventRes = await pool.query(`SELECT title, "eventType", "organizerId", "organizationId" FROM "event" WHERE id = $1`, [eventId]);
+  const eventRes = await pool.query(`SELECT title, "registrationMode", "organizerId", "organizationId" FROM "event" WHERE id = $1`, [eventId]);
   const event = eventRes.rows[0];
   if (!event) return { refunded, pendingReview };
-  const isTournament = event.eventType === "Tournament";
+  const isTournament = isTeamEvent(event);
   const organizerId = event.organizerId as string;
   const organizationId = event.organizationId as string | null;
 
@@ -1270,7 +1271,7 @@ export async function getEventRefundPreview(
   const authResult = await authorizeEventManagement(eventId, session.user.id);
   if ("error" in authResult) return { error: authResult.error };
 
-  const isTournament = authResult.event.eventType === "Tournament";
+  const isTournament = isTeamEvent(authResult.event);
   const result = isTournament
     ? await pool.query(
         `SELECT COUNT(*)::int as count, COALESCE(SUM(ttp.amount), 0)::bigint as total
@@ -1308,7 +1309,7 @@ export async function cancelEvent(
     const { refunded, pendingReview } = await runEventRefundSweep(eventId);
 
     const eventRow = authResult.event;
-    const isTournament = eventRow.eventType === "Tournament";
+    const isTournament = isTeamEvent(eventRow);
     const recipients = await getEventSignupRecipients(eventId, isTournament);
 
     for (const recipient of recipients) {
@@ -1368,12 +1369,12 @@ export async function refundEventParticipant(eventId: string, userId: string): P
   if (!session) return { error: "Unauthorized" };
 
   const eventRes = await pool.query(
-    `SELECT id, title, "eventType", "organizerId", "organizationId" FROM "event" WHERE id = $1`,
+    `SELECT id, title, "registrationMode", "organizerId", "organizationId" FROM "event" WHERE id = $1`,
     [eventId]
   );
   const event = eventRes.rows[0];
   if (!event) return { error: "Event not found" };
-  if (event.eventType === "Tournament") {
+  if (isTeamEvent(event)) {
     return { error: "Tournament team payments are refunded by cancelling the tournament" };
   }
 
@@ -1454,7 +1455,7 @@ export async function postponeEvent(
     );
     if (flip.rowCount === 0) return { error: "Event is cancelled and can't be rescheduled" };
 
-    const isTournament = eventRow.eventType === "Tournament";
+    const isTournament = isTeamEvent(eventRow);
     const recipients = await getEventSignupRecipients(eventId, isTournament);
     for (const recipient of recipients) {
       sendEventPostponedEmail(recipient.email, {

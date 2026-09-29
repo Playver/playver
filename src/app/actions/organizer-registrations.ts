@@ -9,11 +9,13 @@ import { pool } from "@/lib/db";
 import { requireOrganizationPermission } from "./organization";
 import { hasPermission } from "@/lib/organizer-permissions";
 import { ensureTournamentTables } from "@/lib/tournament-tables";
+import { isTeamEvent } from "@/lib/event-type";
 
 export type OrganizerEventSummary = {
   id: string;
   title: string;
   eventType: string;
+  registrationMode: string;
   startDateTime: string;
   endDateTime: string;
   participantCount: number;
@@ -23,6 +25,7 @@ function mapEventSummary(row: {
   id: string;
   title: string;
   eventType: string;
+  registrationMode: string;
   startDateTime: Date | string;
   endDateTime: Date | string;
   participantCount: string | number;
@@ -31,6 +34,7 @@ function mapEventSummary(row: {
     id: row.id,
     title: row.title,
     eventType: row.eventType,
+    registrationMode: row.registrationMode,
     startDateTime: new Date(row.startDateTime).toISOString(),
     endDateTime: new Date(row.endDateTime).toISOString(),
     participantCount: Number(row.participantCount ?? 0),
@@ -43,8 +47,8 @@ export async function getOrganizationEvents(): Promise<OrganizerEventSummary[]> 
   const { organization } = await requireOrganizationPermission("MANAGE_REGISTRATIONS");
 
   const result = await pool.query(
-    `SELECT e.id, e.title, e."eventType", e."startDateTime", e."endDateTime",
-       CASE WHEN e."eventType" = 'Tournament'
+    `SELECT e.id, e.title, e."eventType", e."registrationMode", e."startDateTime", e."endDateTime",
+       CASE WHEN e."registrationMode" = 'team'
          THEN (SELECT COUNT(*) FROM "tournament_team" tt WHERE tt."tournamentId" = e.id)
          ELSE (SELECT COUNT(*) FROM "event_participant" ep WHERE ep."eventId" = e.id)
        END AS "participantCount"
@@ -102,7 +106,7 @@ export async function getEventRegistrants(eventId: string): Promise<EventRegistr
   }
 
   const eventResult = await pool.query(
-    `SELECT id, title, "eventType", "startDateTime", "endDateTime", price, "customFormEnabled"
+    `SELECT id, title, "eventType", "registrationMode", "startDateTime", "endDateTime", price, "customFormEnabled"
      FROM "event" WHERE id = $1 AND "organizationId" = $2`,
     [eventId, organization.id]
   );
@@ -111,10 +115,10 @@ export async function getEventRegistrants(eventId: string): Promise<EventRegistr
 
   const canViewContactInfo = hasPermission(role, "VIEW_SENSITIVE_PARTICIPANT_DATA");
   const canViewPayments = hasPermission(role, "VIEW_PAYMENTS");
-  const canIssueRefunds = eventRow.eventType !== "Tournament" && hasPermission(role, "ISSUE_REFUNDS");
+  const canIssueRefunds = !isTeamEvent(eventRow) && hasPermission(role, "ISSUE_REFUNDS");
 
   const registrants: RegistrantRow[] =
-    eventRow.eventType === "Tournament"
+    isTeamEvent(eventRow)
       ? await getTournamentRegistrants(eventId, eventRow.price, canViewContactInfo, canViewPayments)
       : await getIndividualRegistrants(eventId, eventRow.price, eventRow.customFormEnabled, canViewContactInfo, canViewPayments);
 

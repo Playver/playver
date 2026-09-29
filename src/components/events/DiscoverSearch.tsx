@@ -166,7 +166,7 @@ export default function DiscoverSearch({
   const PAGE_SIZE = 6;
   const hasActiveSearch = search.trim() || location.trim() || activeType !== "all" || sport !== "all" || upcomingOnly;
   const joinedLabel = (event: EventItem) => {
-    if (event.eventType === "Tournament") {
+    if (event.registrationMode === "team") {
       return event.capacity
         ? `${event.participantCount} / ${event.capacity} teams`
         : `${event.participantCount} team${event.participantCount !== 1 ? "s" : ""}`;
