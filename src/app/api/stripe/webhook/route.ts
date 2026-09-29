@@ -2,40 +2,9 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import Stripe from "stripe";
 import { stripe } from "@/lib/stripe";
-import { pool, withTransaction } from "@/lib/db";
+import { pool } from "@/lib/db";
 import { resend, FROM, layout } from "@/lib/emails/_shared";
-import { completeEventStripePayment } from "@/app/actions/event";
-import { completeTeamStripePayment } from "@/app/actions/tournament";
-
-async function handleWalletTopup(session: Stripe.Checkout.Session) {
-  const userId = session.metadata?.userId;
-  const amount = session.amount_total;
-  if (!userId || !amount) return;
-
-  await withTransaction(async (client) => {
-    const ledgerInsert = await client.query(
-      `INSERT INTO "wallet_transaction" (id, "userId", type, amount, "balanceAfter", "stripeSessionId")
-       VALUES ($1, $2, 'deposit', $3, 0, $4)
-       ON CONFLICT ("stripeSessionId") DO NOTHING
-       RETURNING id`,
-      [crypto.randomUUID(), userId, amount, session.id]
-    );
-    // Only credit the balance if this ledger row is new — a Stripe webhook
-    // retry (at-least-once delivery) must not double-credit the wallet.
-    if (ledgerInsert.rowCount === 0) return;
-
-    const updateRes = await client.query(
-      `UPDATE "user" SET "walletBalance" = "walletBalance" + $1 WHERE id = $2 RETURNING "walletBalance"`,
-      [amount, userId]
-    );
-    await client.query(`UPDATE "wallet_transaction" SET "balanceAfter" = $1 WHERE "stripeSessionId" = $2`, [
-      updateRes.rows[0]?.walletBalance ?? amount,
-      session.id,
-    ]);
-  });
-
-  revalidatePath("/dashboard/wallet");
-}
+import { completeCheckoutSession } from "@/lib/stripe-checkout-completion";
 
 async function flagPaymentDisputeForReview(charge: Stripe.Charge, reason: string) {
   console.error("[stripe webhook] payment dispute/refund needs manual review", {
@@ -64,36 +33,9 @@ async function flagPaymentDisputeForReview(charge: Stripe.Charge, reason: string
   );
 }
 
-async function handleEventPayment(session: Stripe.Checkout.Session) {
-  const eventId = session.metadata?.eventId;
-  const userId = session.metadata?.userId;
-  const remainderCents = session.amount_total;
-  const walletCreditCents = Number(session.metadata?.walletCreditCents ?? "0");
-  if (!eventId || !userId || !remainderCents) return;
-
-  await completeEventStripePayment(eventId, userId, remainderCents, walletCreditCents, session.id);
-}
-
-async function handleTeamPayment(session: Stripe.Checkout.Session) {
-  const teamId = session.metadata?.teamId;
-  const userId = session.metadata?.userId;
-  const remainderCents = session.amount_total;
-  const walletCreditCents = Number(session.metadata?.walletCreditCents ?? "0");
-  if (!teamId || !userId || !remainderCents) return;
-
-  await completeTeamStripePayment(teamId, userId, remainderCents, walletCreditCents, session.id);
-}
-
 async function handlePlatformEvent(event: Stripe.Event) {
   if (event.type === "checkout.session.completed") {
-    const session = event.data.object;
-    if (session.metadata?.type === "wallet_topup") {
-      await handleWalletTopup(session);
-    } else if (session.metadata?.type === "event_payment") {
-      await handleEventPayment(session);
-    } else if (session.metadata?.type === "team_payment") {
-      await handleTeamPayment(session);
-    }
+    await completeCheckoutSession(event.data.object);
     return;
   }
 

@@ -23,7 +23,8 @@ import { getGamesForEvent } from "@/app/actions/game";
 import { getMiniEventsForEvent, getTournamentPlayers } from "@/app/actions/miniEvent";
 import { getUserRole } from "@/app/actions/admin";
 import { getAvailableWalletBalance } from "@/app/actions/wallet";
-import { formatPrice } from "@/lib/stripe";
+import { formatPrice, stripe } from "@/lib/stripe";
+import { completeCheckoutSession } from "@/lib/stripe-checkout-completion";
 import TournamentRegisterButton from "@/components/tournaments/TournamentRegisterButton";
 import { TournamentCaptainPanel, TournamentMemberPanel } from "@/components/tournaments/TournamentCaptainPanel";
 import JoinTeamTabButton from "@/components/tournaments/JoinTeamTabButton";
@@ -48,10 +49,10 @@ export default async function EventDetailsPage({
   searchParams,
 }: {
   params: Promise<{ eventId: string }>;
-  searchParams: Promise<{ payment?: string }>;
+  searchParams: Promise<{ payment?: string; session_id?: string }>;
 }) {
   const requestHeaders = await headers();
-  const [{ eventId }, t, session, { payment }] = await Promise.all([
+  const [{ eventId }, t, session, { payment, session_id: stripeSessionId }] = await Promise.all([
     params,
     getTranslations("EventDetails"),
     auth.api.getSession({ headers: requestHeaders }),
@@ -59,6 +60,27 @@ export default async function EventDetailsPage({
   ]);
   const isMobile = isMobileUserAgent(requestHeaders.get("user-agent") ?? "");
   const paymentSuccess = payment === "success";
+
+  // Reconcile the payment ourselves before reading anything else: Stripe's
+  // webhook is delivered asynchronously, so a user can land back on
+  // ?payment=success (and this page can re-query the DB) before the webhook
+  // has actually run — showing a stale "still pending" state despite the
+  // card already being charged. completeCheckoutSession is idempotent
+  // (guarded by a status='pending' WHERE clause), so calling it again here
+  // is safe even once the webhook does land.
+  if (paymentSuccess && stripeSessionId) {
+    try {
+      const checkoutSession = await stripe.checkout.sessions.retrieve(stripeSessionId);
+      if (checkoutSession.payment_status === "paid") {
+        await completeCheckoutSession(checkoutSession);
+      }
+    } catch {
+      // Reconciliation is a best-effort fallback — the real webhook is still
+      // the source of truth, so a failure here (bad/expired session id, a
+      // transient Stripe API error) shouldn't break the page.
+    }
+  }
+
   const event = await getEventById(eventId);
   if (!event) notFound();
 
