@@ -295,10 +295,7 @@ export default async function OrganizationPublicProfilePage({
       {hasLocationOrContact && (
         <section>
           <h2 className="text-lg font-extrabold text-zinc-900 mb-4">{t("locationContactTitle")}</h2>
-          <div className="grid gap-6 md:grid-cols-2">
-            <div className="relative h-48 rounded-2xl overflow-hidden border border-zinc-200 bg-gradient-to-br from-zinc-100 to-zinc-200">
-              {profile.coverImageUrl && <Image src={profile.coverImageUrl} alt="" fill className="object-cover" />}
-            </div>
+          <div className="grid gap-6">
             <div className="flex flex-col gap-3 text-sm text-zinc-600">
               {(locationLabel || profile.country) && (
                 <div className="flex items-start gap-2">

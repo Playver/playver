@@ -430,7 +430,7 @@ export default async function EventDetailsPage({
                         </Link>
                       )
                     )}
-                    {session && (
+                    {session ? (
                       <EventJoinButton
                         eventId={event.id}
                         isJoined={joinedSet.has(event.id)}
@@ -443,7 +443,14 @@ export default async function EventDetailsPage({
                         tiers={tiers}
                         isEnded={isEnded || event.status === "cancelled"}
                       />
-                    )}
+                    ) : !isEnded && event.status === "active" ? (
+                      <Link
+                        href="/auth/signin"
+                        className="block rounded-lg bg-[#e21d12] px-4 py-3 text-center text-sm font-semibold text-white hover:bg-[#d41810] transition-colors"
+                      >
+                        {t("signInToRegister")}
+                      </Link>
+                    ) : null}
                     {isSuperAdmin && (
                       <>
                         <AdminAddParticipant eventId={event.id} />
