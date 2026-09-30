@@ -1,7 +1,7 @@
-// /dashboard/wallet: athlete wallet balance/transactions. `deposit` query
-// param is set by Stripe redirecting back here after a wallet top-up
-// Checkout session, read by WalletClient to show the success banner.
-// Connect onboarding no longer redirects — see ConnectPayoutOnboarding.
+// /dashboard/wallet: athlete wallet balance/transactions, deposit-only (no
+// payout — see wallet.ts). `deposit` query param is set by Stripe redirecting
+// back here after a wallet top-up Checkout session, read by WalletClient to
+// show the success banner.
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getTranslations } from "next-intl/server";

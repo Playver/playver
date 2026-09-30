@@ -42,9 +42,17 @@ export default function OrganizerPaymentsClient({
   }, []);
 
   function handleOnboardingExit() {
-    setShowOnboarding(false);
-    setJustExitedOnboarding(true);
-    router.refresh();
+    // Stripe's embedded onboarding component can invoke onExit synchronously
+    // from inside its own render/commit, which trips React's "cannot update
+    // a component while rendering a different component" guard on
+    // useRouter()'s state. Deferring past the current call stack (a
+    // queueMicrotask, not a state-update-in-effect issue we can fix any
+    // other way since we don't control when Stripe calls this) avoids it.
+    queueMicrotask(() => {
+      setShowOnboarding(false);
+      setJustExitedOnboarding(true);
+      router.refresh();
+    });
   }
 
   function handleWithdraw(e: React.FormEvent) {
@@ -100,8 +108,10 @@ export default function OrganizerPaymentsClient({
                     fetchClientSecret={fetchConnectClientSecret}
                     onExit={handleOnboardingExit}
                     onLoadError={() => {
-                      setConnectError(t("paymentsErrorGeneric"));
-                      setShowOnboarding(false);
+                      queueMicrotask(() => {
+                        setConnectError(t("paymentsErrorGeneric"));
+                        setShowOnboarding(false);
+                      });
                     }}
                   />
                 </div>

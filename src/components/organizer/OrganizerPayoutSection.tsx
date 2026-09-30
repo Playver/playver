@@ -26,13 +26,20 @@ export default function OrganizerPayoutSection({ connectOnboarded }: { connectOn
   }, []);
 
   function handleOnboardingExit() {
-    setShowOnboarding(false);
-    getOrganizationWalletOverview()
-      .then((overview) => {
-        setOnboarded(overview.connectOnboarded);
-        router.refresh();
-      })
-      .catch(() => {});
+    // See OrganizerPaymentsClient.tsx's handleOnboardingExit for why this is
+    // deferred: Stripe's embedded onboarding component can call onExit
+    // synchronously from inside its own render/commit, which trips React's
+    // "cannot update a component while rendering a different component"
+    // guard on useRouter()'s state.
+    queueMicrotask(() => {
+      setShowOnboarding(false);
+      getOrganizationWalletOverview()
+        .then((overview) => {
+          setOnboarded(overview.connectOnboarded);
+          router.refresh();
+        })
+        .catch(() => {});
+    });
   }
 
   return (
@@ -55,8 +62,10 @@ export default function OrganizerPayoutSection({ connectOnboarded }: { connectOn
             fetchClientSecret={fetchConnectClientSecret}
             onExit={handleOnboardingExit}
             onLoadError={() => {
-              setError(t("wizardPaymentsError"));
-              setShowOnboarding(false);
+              queueMicrotask(() => {
+                setError(t("wizardPaymentsError"));
+                setShowOnboarding(false);
+              });
             }}
           />
         </div>
