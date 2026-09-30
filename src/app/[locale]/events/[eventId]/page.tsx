@@ -4,13 +4,13 @@
 // balance) via several parallel Promise.all batches, since the tabs render
 // client-side with no per-tab fetch.
 import { headers } from "next/headers";
-import Image from "next/image";
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import LoggedInPageShell from "@/components/layout/LoggedInPageShell";
 import EventJoinButton from "@/components/events/EventJoinButton";
+import EventCoverImage from "@/components/events/EventCoverImage";
 import EventDetailsTabs from "@/components/events/EventDetailsTabs";
 import AdminDeleteEventButton from "@/components/events/AdminDeleteEventButton";
 import EventCancelPostponeButton from "@/components/events/EventCancelPostponeButton";
@@ -161,7 +161,7 @@ export default async function EventDetailsPage({
             {/* Cover */}
             <div className="relative h-[200px] sm:h-[320px] overflow-hidden bg-zinc-100">
               {event.coverImageUrl ? (
-                <Image src={event.coverImageUrl} alt={event.title} fill priority className="object-cover" />
+                <EventCoverImage src={event.coverImageUrl} alt={event.title} />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-6xl font-bold text-[#e21d12]">
                   {event.title[0]?.toUpperCase()}

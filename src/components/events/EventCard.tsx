@@ -90,7 +90,10 @@ export default function EventCard({
   const media = (
     <>
       {cover ? (
-        <Image src={cover} alt={event.title} fill className="object-cover" />
+        <>
+          <Image src={cover} alt="" aria-hidden fill className="object-cover scale-110 blur-lg" />
+          <Image src={cover} alt={event.title} fill className="object-contain" />
+        </>
       ) : (
         <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-100 to-zinc-200 text-5xl font-black text-zinc-300 select-none">
           {event.sport[0]?.toUpperCase()}
