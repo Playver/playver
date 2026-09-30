@@ -1091,13 +1091,15 @@ export default function EventDetailsTabs({
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {participants.map((participant) => (
               <div key={participant.id} className="flex items-center gap-4 rounded-2xl border border-zinc-200 bg-white p-4">
-                <div className="flex size-12 items-center justify-center overflow-hidden rounded-full bg-zinc-100 font-extrabold text-zinc-500">
-                  {participant.image ? <Image src={participant.image} alt={participant.name} width={48} height={48} className="size-12 object-cover" /> : participant.name[0]?.toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-extrabold text-zinc-950">{participant.name}</p>
-                  <p className="text-sm text-zinc-400">{formatDate(participant.joinedAt)}</p>
-                </div>
+                <Link href={`/athletes/${participant.id}`} className="flex flex-1 min-w-0 items-center gap-4">
+                  <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-zinc-100 font-extrabold text-zinc-500">
+                    {participant.image ? <Image src={participant.image} alt={participant.name} width={48} height={48} className="size-12 object-cover" /> : participant.name[0]?.toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-extrabold text-zinc-950 hover:underline">{participant.name}</p>
+                    <p className="text-sm text-zinc-400">{formatDate(participant.joinedAt)}</p>
+                  </div>
+                </Link>
                 {isSuperAdmin && (
                   <button
                     type="button"
