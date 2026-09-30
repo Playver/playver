@@ -23,6 +23,8 @@ type EventRow = {
   organizerId: string;
   organizerName: string;
   organizationId: string | null;
+  organizationSlug?: string | null;
+  organizationLogo?: string | null;
   customFormEnabled: boolean;
   price: number;
   hasCompetitionSchedule: boolean;

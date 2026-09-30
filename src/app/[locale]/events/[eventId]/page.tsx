@@ -267,7 +267,14 @@ export default async function EventDetailsPage({
                         </div>
                       )}
                       <p className="mt-6 text-sm text-zinc-500">
-                        {t("organizedBy")}: <span className="font-semibold text-zinc-700">{event.organizerName}</span>
+                        {t("organizedBy")}:{" "}
+                        {event.organizationSlug ? (
+                          <Link href={`/organizations/${event.organizationSlug}`} className="font-semibold text-zinc-700 hover:underline">
+                            {event.organizerName}
+                          </Link>
+                        ) : (
+                          <span className="font-semibold text-zinc-700">{event.organizerName}</span>
+                        )}
                       </p>
                       <div className="mt-6 flex flex-col gap-2">
                         {event.organizationId === null ? (
@@ -378,7 +385,14 @@ export default async function EventDetailsPage({
                     <div className="h-full rounded-full bg-[#e21d12]" style={{ width: `${progress}%` }} />
                   </div>
                   <p className="mt-6 text-sm text-zinc-500">
-                    {t("organizedBy")}: <span className="font-semibold text-zinc-700">{event.organizerName}</span>
+                    {t("organizedBy")}:{" "}
+                    {event.organizationSlug ? (
+                      <Link href={`/organizations/${event.organizationSlug}`} className="font-semibold text-zinc-700 hover:underline">
+                        {event.organizerName}
+                      </Link>
+                    ) : (
+                      <span className="font-semibold text-zinc-700">{event.organizerName}</span>
+                    )}
                   </p>
                   <div className="mt-6 flex flex-col gap-2">
                     {isOrganizer && (

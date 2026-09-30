@@ -166,15 +166,34 @@ export default function EventCard({
         <div className="my-4 h-px bg-zinc-100" />
 
         <div className="mt-auto flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-xs font-extrabold uppercase text-zinc-500">
-              {action ?? event.organizerName?.[0]?.toUpperCase()}
+          {event.organizationSlug ? (
+            <Link
+              href={`/organizations/${event.organizationSlug}`}
+              className="flex min-w-0 items-center gap-2.5 hover:opacity-80"
+            >
+              <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-zinc-100 text-xs font-extrabold uppercase text-zinc-500">
+                {event.organizationLogo ? (
+                  <Image src={event.organizationLogo} alt={event.organizerName} width={36} height={36} className="size-9 object-cover" />
+                ) : (
+                  action ?? event.organizerName?.[0]?.toUpperCase()
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-wide text-zinc-400">{organizerLabel}</p>
+                <p className="truncate text-sm font-extrabold text-zinc-900 hover:underline">{event.organizerName}</p>
+              </div>
+            </Link>
+          ) : (
+            <div className="flex min-w-0 items-center gap-2.5">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-xs font-extrabold uppercase text-zinc-500">
+                {action ?? event.organizerName?.[0]?.toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-wide text-zinc-400">{organizerLabel}</p>
+                <p className="truncate text-sm font-extrabold text-zinc-900">{event.organizerName}</p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wide text-zinc-400">{organizerLabel}</p>
-              <p className="truncate text-sm font-extrabold text-zinc-900">{event.organizerName}</p>
-            </div>
-          </div>
+          )}
           <div className="w-36 max-w-[50%]">
             <p className="mb-1.5 text-right text-xs font-extrabold text-zinc-900">{joinedLabel}</p>
             <div className="h-1.5 overflow-hidden rounded-full bg-zinc-100">

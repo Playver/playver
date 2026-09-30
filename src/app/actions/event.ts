@@ -321,7 +321,7 @@ export async function createEvent(data: {
 export async function getEvents() {
   await ensureEventParticipantsTable();
   const result = await pool.query(
-    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName",
+    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName", o.slug as "organizationSlug", o."logoUrl" as "organizationLogo",
        CASE WHEN e."registrationMode" = 'team'
          THEN (SELECT COUNT(*) FROM "tournament_team" tt WHERE tt."tournamentId" = e.id AND tt.status = 'active')
          ELSE COUNT(ep.id)
@@ -330,7 +330,7 @@ export async function getEvents() {
      JOIN "user" u ON e."organizerId" = u.id
      LEFT JOIN "organization" o ON o.id = e."organizationId"
      LEFT JOIN "event_participant" ep ON ep."eventId" = e.id
-     GROUP BY e.id, u.name, o.name
+     GROUP BY e.id, u.name, o.name, o.slug, o."logoUrl"
      ORDER BY
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN 0 ELSE 1 END ASC,
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN e."startDateTime" END ASC NULLS LAST,
@@ -346,7 +346,7 @@ export async function getEvents() {
 export async function getEventsByOrganization(organizationId: string) {
   await ensureEventParticipantsTable();
   const result = await pool.query(
-    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName",
+    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName", o.slug as "organizationSlug", o."logoUrl" as "organizationLogo",
        CASE WHEN e."registrationMode" = 'team'
          THEN (SELECT COUNT(*) FROM "tournament_team" tt WHERE tt."tournamentId" = e.id AND tt.status = 'active')
          ELSE COUNT(ep.id)
@@ -356,7 +356,7 @@ export async function getEventsByOrganization(organizationId: string) {
      LEFT JOIN "organization" o ON o.id = e."organizationId"
      LEFT JOIN "event_participant" ep ON ep."eventId" = e.id
      WHERE e."organizationId" = $1
-     GROUP BY e.id, u.name, o.name
+     GROUP BY e.id, u.name, o.name, o.slug, o."logoUrl"
      ORDER BY
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN 0 ELSE 1 END ASC,
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN e."startDateTime" END ASC NULLS LAST,
@@ -369,13 +369,13 @@ export async function getEventsByOrganization(organizationId: string) {
 export async function getTournamentEvents() {
   await ensureTournamentTables();
   const result = await pool.query(
-    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName", COUNT(tt.id) as "participantCount"
+    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName", o.slug as "organizationSlug", o."logoUrl" as "organizationLogo", COUNT(tt.id) as "participantCount"
      FROM "event" e
      JOIN "user" u ON e."organizerId" = u.id
      LEFT JOIN "organization" o ON o.id = e."organizationId"
      LEFT JOIN "tournament_team" tt ON tt."tournamentId" = e.id AND tt.status = 'active'
      WHERE e."registrationMode" = 'team'
-     GROUP BY e.id, u.name, o.name
+     GROUP BY e.id, u.name, o.name, o.slug, o."logoUrl"
      ORDER BY
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN 0 ELSE 1 END ASC,
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN e."startDateTime" END ASC NULLS LAST,
@@ -391,13 +391,13 @@ export async function getMyTournaments() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return [];
   const result = await pool.query(
-    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName", COUNT(tt.id) as "participantCount"
+    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName", o.slug as "organizationSlug", o."logoUrl" as "organizationLogo", COUNT(tt.id) as "participantCount"
      FROM "event" e
      JOIN "user" u ON e."organizerId" = u.id
      LEFT JOIN "organization" o ON o.id = e."organizationId"
      LEFT JOIN "tournament_team" tt ON tt."tournamentId" = e.id AND tt.status = 'active'
      WHERE e."organizerId" = $1 AND e."registrationMode" = 'team' AND e."organizationId" IS NULL
-     GROUP BY e.id, u.name, o.name
+     GROUP BY e.id, u.name, o.name, o.slug, o."logoUrl"
      ORDER BY
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN 0 ELSE 1 END ASC,
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN e."startDateTime" END ASC NULLS LAST,
@@ -412,7 +412,7 @@ export async function getJoinedTournaments() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return [];
   const result = await pool.query(
-    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName", COUNT(all_tt.id) as "participantCount"
+    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName", o.slug as "organizationSlug", o."logoUrl" as "organizationLogo", COUNT(all_tt.id) as "participantCount"
      FROM "event" e
      JOIN "user" u ON e."organizerId" = u.id
      LEFT JOIN "organization" o ON o.id = e."organizationId"
@@ -426,7 +426,7 @@ export async function getJoinedTournaments() {
        )
      LEFT JOIN "tournament_team" all_tt ON all_tt."tournamentId" = e.id AND all_tt.status = 'active'
      WHERE e."organizerId" <> $1 AND e."registrationMode" = 'team'
-     GROUP BY e.id, u.name, o.name
+     GROUP BY e.id, u.name, o.name, o.slug, o."logoUrl"
      ORDER BY
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN 0 ELSE 1 END ASC,
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN e."startDateTime" END ASC NULLS LAST,
@@ -439,7 +439,7 @@ export async function getJoinedTournaments() {
 export async function getEventById(eventId: string) {
   await ensureEventParticipantsTable();
   const result = await pool.query(
-    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName",
+    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName", o.slug as "organizationSlug", o."logoUrl" as "organizationLogo",
        CASE WHEN e."registrationMode" = 'team'
          THEN (SELECT COUNT(*) FROM "tournament_team" tt WHERE tt."tournamentId" = e.id AND tt.status = 'active')
          ELSE COUNT(ep.id)
@@ -449,7 +449,7 @@ export async function getEventById(eventId: string) {
      LEFT JOIN "organization" o ON o.id = e."organizationId"
      LEFT JOIN "event_participant" ep ON ep."eventId" = e.id
      WHERE e.id = $1
-     GROUP BY e.id, u.name, o.name`,
+     GROUP BY e.id, u.name, o.name, o.slug, o."logoUrl"`,
     [eventId]
   );
   return result.rows[0] ? serializeEvent(result.rows[0]) : null;
@@ -461,7 +461,7 @@ export async function getMyEvents() {
   await ensureEventParticipantsTable();
 
   const result = await pool.query(
-    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName",
+    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName", o.slug as "organizationSlug", o."logoUrl" as "organizationLogo",
        CASE WHEN e."registrationMode" = 'team'
          THEN (SELECT COUNT(*) FROM "tournament_team" tt WHERE tt."tournamentId" = e.id AND tt.status = 'active')
          ELSE COUNT(ep.id)
@@ -471,7 +471,7 @@ export async function getMyEvents() {
      LEFT JOIN "organization" o ON o.id = e."organizationId"
      LEFT JOIN "event_participant" ep ON ep."eventId" = e.id
      WHERE e."organizerId" = $1
-     GROUP BY e.id, u.name, o.name
+     GROUP BY e.id, u.name, o.name, o.slug, o."logoUrl"
      ORDER BY
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN 0 ELSE 1 END ASC,
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN e."startDateTime" END ASC NULLS LAST,
@@ -493,7 +493,7 @@ export async function getMyLegacyEvents() {
   await ensureEventParticipantsTable();
 
   const result = await pool.query(
-    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName",
+    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName", o.slug as "organizationSlug", o."logoUrl" as "organizationLogo",
        CASE WHEN e."registrationMode" = 'team'
          THEN (SELECT COUNT(*) FROM "tournament_team" tt WHERE tt."tournamentId" = e.id AND tt.status = 'active')
          ELSE COUNT(ep.id)
@@ -503,7 +503,7 @@ export async function getMyLegacyEvents() {
      LEFT JOIN "organization" o ON o.id = e."organizationId"
      LEFT JOIN "event_participant" ep ON ep."eventId" = e.id
      WHERE e."organizerId" = $1 AND e."organizationId" IS NULL
-     GROUP BY e.id, u.name, o.name
+     GROUP BY e.id, u.name, o.name, o.slug, o."logoUrl"
      ORDER BY
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN 0 ELSE 1 END ASC,
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN e."startDateTime" END ASC NULLS LAST,
@@ -519,7 +519,7 @@ export async function getJoinedEvents() {
   await ensureEventParticipantsTable();
 
   const result = await pool.query(
-    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName",
+    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName", o.slug as "organizationSlug", o."logoUrl" as "organizationLogo",
        CASE WHEN e."registrationMode" = 'team'
          THEN (SELECT COUNT(*) FROM "tournament_team" tt WHERE tt."tournamentId" = e.id AND tt.status = 'active')
          ELSE (SELECT COUNT(*) FROM "event_participant" all_ep WHERE all_ep."eventId" = e.id)
@@ -576,7 +576,7 @@ export async function getEventParticipants(eventId: string): Promise<EventPartic
 export async function getTeamEvents(teamId: string): Promise<EventItem[]> {
   await ensureEventParticipantsTable();
   const result = await pool.query(
-    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName",
+    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName", o.slug as "organizationSlug", o."logoUrl" as "organizationLogo",
        CASE WHEN e."registrationMode" = 'team'
          THEN (SELECT COUNT(*) FROM "tournament_team" tt WHERE tt."tournamentId" = e.id AND tt.status = 'active')
          ELSE (SELECT COUNT(*) FROM "event_participant" all_ep WHERE all_ep."eventId" = e.id)
@@ -596,7 +596,7 @@ export async function getTeamEvents(teamId: string): Promise<EventItem[]> {
        FROM "tournament_team" tt
        WHERE tt."linkedTeamId" = $1
      )
-     GROUP BY e.id, u.name, o.name
+     GROUP BY e.id, u.name, o.name, o.slug, o."logoUrl"
      ORDER BY e."startDateTime" ASC`,
     [teamId]
   );

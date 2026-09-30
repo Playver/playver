@@ -28,7 +28,7 @@ export async function getOrganizationEventsFull(): Promise<EventItem[]> {
   await ensureEventParticipantsTable();
 
   const result = await pool.query(
-    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName",
+    `SELECT e.*, COALESCE(o.name, u.name) as "organizerName", o.slug as "organizationSlug", o."logoUrl" as "organizationLogo",
        CASE WHEN e."registrationMode" = 'team'
          THEN (SELECT COUNT(*) FROM "tournament_team" tt WHERE tt."tournamentId" = e.id AND tt.status = 'active')
          ELSE COUNT(ep.id)
@@ -38,7 +38,7 @@ export async function getOrganizationEventsFull(): Promise<EventItem[]> {
      LEFT JOIN "organization" o ON o.id = e."organizationId"
      LEFT JOIN "event_participant" ep ON ep."eventId" = e.id
      WHERE e."organizationId" = $1
-     GROUP BY e.id, u.name, o.name
+     GROUP BY e.id, u.name, o.name, o.slug, o."logoUrl"
      ORDER BY
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN 0 ELSE 1 END ASC,
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN e."startDateTime" END ASC NULLS LAST,
