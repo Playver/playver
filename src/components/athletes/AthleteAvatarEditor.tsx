@@ -68,7 +68,12 @@ export default function AthleteAvatarEditor({
     </div>
   );
 
-  if (!isOwnProfile) return avatar;
+  // `relative` matters here, not just decoration: the cover banner container
+  // is `position: relative`, and CSS paints positioned elements above static
+  // ones regardless of DOM order — without this, the cover silently painted
+  // over the top half of this avatar whenever they overlapped. The
+  // isOwnProfile button below is unaffected since it's already `relative`.
+  if (!isOwnProfile) return <div className="relative shrink-0">{avatar}</div>;
 
   return (
     <button type="button" onClick={() => inputRef.current?.click()} className="relative group shrink-0" disabled={uploading} aria-label={t("changePhoto")}>
