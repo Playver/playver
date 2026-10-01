@@ -105,25 +105,83 @@ export async function createOrganizationConnectAccountSession(): Promise<{ clien
   if (!session) return { error: "Unauthorized" };
   const { organization } = await requireOrganizationPermission("MANAGE_PAYMENTS");
 
-  const orgRow = await pool.query(`SELECT "stripeConnectAccountId" FROM "organization" WHERE id = $1`, [organization.id]);
+  const orgRow = await pool.query(
+    `SELECT "stripeConnectAccountId", slug, website, "shortDescription" FROM "organization" WHERE id = $1`,
+    [organization.id]
+  );
   let accountId = orgRow.rows[0]?.stripeConnectAccountId as string | null;
 
-  if (!accountId) {
-    const account = await stripe.accounts.create({
-      type: "express",
-      country: "CA",
-      email: organization.publicEmail ?? session.user.email,
-    });
-    accountId = account.id;
-    await pool.query(`UPDATE "organization" SET "stripeConnectAccountId" = $1 WHERE id = $2`, [accountId, organization.id]);
+  // Older orgs may hold an Express account (Stripe-collected requirements),
+  // which forces Stripe's sign-in popup and can't be converted. Replace it
+  // only if it never got payouts working — an Express account that already
+  // pays out is left alone so that org never has to onboard again.
+  let platformCollected = false;
+  if (accountId) {
+    const existing = await stripe.accounts.retrieve(accountId);
+    platformCollected = existing.controller?.requirement_collection === "application";
+    if (!platformCollected && !existing.payouts_enabled) accountId = null;
   }
 
+  if (!accountId) {
+    // No Stripe dashboard + platform-collected requirements is the only
+    // account shape Stripe allows disable_stripe_user_authentication on,
+    // which is what keeps the whole onboarding inline on our page instead
+    // of opening a Stripe sign-in popup (the Express default).
+    const account = await stripe.accounts.create({
+      country: "CA",
+      email: organization.publicEmail ?? session.user.email,
+      controller: {
+        stripe_dashboard: { type: "none" },
+        requirement_collection: "application",
+        fees: { payer: "application" },
+        losses: { payments: "application" },
+      },
+      capabilities: { transfers: { requested: true } },
+      // Prefilled so Stripe skips its "Business details" step — we already
+      // know what every organizer does. Stripe rejects non-public URLs, so
+      // local/dev base URLs fall back to the production domain.
+      business_profile: {
+        mcc: "7941", // Commercial sports, athletic fields, sports promoters
+        url: orgWebsiteForStripe(orgRow.rows[0]),
+        product_description:
+          orgRow.rows[0]?.shortDescription ||
+          "Organizes sports events and tournaments; participants register and pay entry fees through Playver.",
+      },
+    });
+    accountId = account.id;
+    platformCollected = true;
+    await pool.query(
+      `UPDATE "organization" SET "stripeConnectAccountId" = $1, "stripeConnectOnboarded" = false WHERE id = $2`,
+      [accountId, organization.id]
+    );
+  }
+
+  // Stripe only accepts disable_stripe_user_authentication on
+  // platform-collected accounts; a kept legacy Express account falls back to
+  // Stripe's defaults (sign-in popup) rather than failing the session.
+  const features = platformCollected
+    ? { disable_stripe_user_authentication: true, external_account_collection: true }
+    : {};
   const accountSession = await stripe.accountSessions.create({
     account: accountId,
-    components: { account_onboarding: { enabled: true } },
+    // account_management powers "Change bank account" after onboarding —
+    // organizers have no Stripe dashboard, so this is their only way to
+    // update payout details.
+    components: {
+      account_onboarding: { enabled: true, features },
+      account_management: { enabled: true, features },
+    },
   });
 
   return { clientSecret: accountSession.client_secret };
+}
+
+function orgWebsiteForStripe(org: { slug: string; website: string | null } | undefined): string {
+  if (org?.website && /^https:\/\//.test(org.website)) return org.website;
+  const base = process.env.NEXT_PUBLIC_BASE_URL?.startsWith("https://")
+    ? process.env.NEXT_PUBLIC_BASE_URL
+    : "https://playver.ca";
+  return `${base}/organizations/${org?.slug ?? ""}`;
 }
 
 function calculateWithdrawalFee(_amountCents: number): number {

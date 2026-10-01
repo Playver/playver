@@ -11,16 +11,19 @@
 // now) — the only three places that onboard a Connect account.
 import { useRef } from "react";
 import { loadConnectAndInitialize, type StripeConnectInstance } from "@stripe/connect-js";
-import { ConnectComponentsProvider, ConnectAccountOnboarding } from "@stripe/react-connect-js";
+import { ConnectComponentsProvider, ConnectAccountOnboarding, ConnectAccountManagement } from "@stripe/react-connect-js";
 
 export default function ConnectPayoutOnboarding({
   fetchClientSecret,
   onExit,
   onLoadError,
+  mode = "onboarding",
 }: {
   fetchClientSecret: () => Promise<string>;
   onExit: () => void;
   onLoadError?: () => void;
+  // "management" = post-onboarding edits (bank account, personal details).
+  mode?: "onboarding" | "management";
 }) {
   // A ref-guarded singleton, not useMemo: loadConnectAndInitialize() isn't a
   // pure computation — it injects Stripe's embed script and kicks off real
@@ -60,12 +63,16 @@ export default function ConnectPayoutOnboarding({
 
   return (
     <ConnectComponentsProvider connectInstance={instance}>
-      <ConnectAccountOnboarding
-        onExit={onExit}
-        onLoadError={onLoadError}
-        recipientTermsOfServiceUrl={`${baseUrl}/legal/terms`}
-        privacyPolicyUrl={`${baseUrl}/legal/privacy`}
-      />
+      {mode === "management" ? (
+        <ConnectAccountManagement onLoadError={onLoadError} />
+      ) : (
+        <ConnectAccountOnboarding
+          onExit={onExit}
+          onLoadError={onLoadError}
+          recipientTermsOfServiceUrl={`${baseUrl}/legal/terms`}
+          privacyPolicyUrl={`${baseUrl}/legal/privacy`}
+        />
+      )}
     </ConnectComponentsProvider>
   );
 }

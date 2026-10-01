@@ -29,6 +29,7 @@ export default function OrganizerPaymentsClient({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showManagement, setShowManagement] = useState(false);
   const [justExitedOnboarding, setJustExitedOnboarding] = useState(false);
   const [connectError, setConnectError] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
@@ -96,7 +97,9 @@ export default function OrganizerPaymentsClient({
       </div>
 
       {canManagePayments && (
-        <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-8 max-w-md">
+        <div
+          className={`bg-white rounded-2xl border border-zinc-200 shadow-sm p-8 ${showOnboarding || showManagement ? "w-full" : "max-w-md"}`}
+        >
           <h2 className="text-base font-bold text-zinc-900 mb-6">{t("paymentsPayoutTitle")}</h2>
           {!overview.connectOnboarded ? (
             <div className="flex flex-col gap-4">
@@ -128,6 +131,33 @@ export default function OrganizerPaymentsClient({
                 </button>
               )}
             </div>
+          ) : showManagement ? (
+            <div className="flex flex-col gap-4">
+              {connectError && <p className="text-xs font-semibold text-red-600">{connectError}</p>}
+              <div className="rounded-lg border border-zinc-200 overflow-hidden">
+                <ConnectPayoutOnboarding
+                  mode="management"
+                  fetchClientSecret={fetchConnectClientSecret}
+                  onExit={() => {}}
+                  onLoadError={() => {
+                    queueMicrotask(() => {
+                      setConnectError(t("paymentsErrorGeneric"));
+                      setShowManagement(false);
+                    });
+                  }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowManagement(false);
+                  router.refresh();
+                }}
+                className="self-end px-5 py-2.5 text-sm font-semibold text-white rounded-lg bg-zinc-900 hover:bg-zinc-800 transition-colors shadow-sm"
+              >
+                {t("paymentsManagePayoutDone")}
+              </button>
+            </div>
           ) : (
             <form onSubmit={handleWithdraw} className="flex flex-col gap-5">
               <p className="text-xs text-zinc-500">
@@ -157,6 +187,16 @@ export default function OrganizerPaymentsClient({
                 className="w-full py-3 text-sm font-semibold text-white rounded-lg bg-zinc-900 hover:bg-zinc-800 transition-colors shadow-sm disabled:opacity-60"
               >
                 {isPending ? "..." : t("paymentsWithdrawButton")}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConnectError("");
+                  setShowManagement(true);
+                }}
+                className="text-sm font-semibold text-zinc-600 hover:text-zinc-900 underline underline-offset-2"
+              >
+                {t("paymentsManagePayoutAccount")}
               </button>
             </form>
           )}

@@ -1061,6 +1061,8 @@
     "paymentsWithdrawAmountLabel": "Montant",
     "paymentsWithdrawSuccess": "Retrait envoyé au compte bancaire de votre organisation.",
     "paymentsWithdrawButton": "Retirer",
+    "paymentsManagePayoutAccount": "Modifier le compte bancaire ou les informations de versement",
+    "paymentsManagePayoutDone": "Terminé",
     "paymentsErrorGeneric": "Une erreur est survenue — veuillez réessayer.",
     "paymentsErrorMinWithdrawal": "Le retrait minimum est de 10 $",
     "paymentsHistoryTitle": "Historique des transactions",

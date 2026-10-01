@@ -1061,6 +1061,8 @@
     "paymentsWithdrawAmountLabel": "Amount",
     "paymentsWithdrawSuccess": "Withdrawal sent to your organization's bank account.",
     "paymentsWithdrawButton": "Withdraw",
+    "paymentsManagePayoutAccount": "Change bank account or payout details",
+    "paymentsManagePayoutDone": "Done",
     "paymentsErrorGeneric": "Something went wrong — please try again.",
     "paymentsErrorMinWithdrawal": "Minimum withdrawal is $10",
     "paymentsHistoryTitle": "Transaction History",
