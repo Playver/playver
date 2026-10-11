@@ -24,6 +24,9 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import type { PoolClient } from "@neondatabase/serverless";
+import { calculateFees, netForCollected } from "@/lib/payment-fees";
+import { assertPaidCheckoutSession } from "@/lib/verify-checkout-session";
+import { applyRefundFees, getRefundFeeStatus, notifyAdminsOfRefundFlag } from "@/lib/refund-fees";
 import { auth } from "@/lib/auth";
 import { pool, withTransaction } from "@/lib/db";
 import { sendEventJoinedEmail, sendNewParticipantEmail, sendEventFullEmail, sendPaymentReceiptEmail, sendEventCancelledEmail, sendEventPostponedEmail } from "@/lib/emails";
@@ -813,6 +816,9 @@ export async function payForEventWithWallet(eventId: string, categoryId?: string
     const organizerId = event.organizerId as string;
     const organizationId = event.organizationId as string | null;
     if (payerId === organizerId) return { error: "You can't pay to join your own event" };
+    // Org events are charged fees at payment time (see payment-fees.ts);
+    // legacy personal-wallet events keep crediting the full price.
+    const fees = calculateFees(price);
 
     let alreadyJoined = false;
     try {
@@ -841,12 +847,12 @@ export async function payForEventWithWallet(eventId: string, categoryId?: string
 
           const orgBalanceRes = await client.query(
             `UPDATE "organization" SET "walletBalance" = "walletBalance" + $1 WHERE id = $2 RETURNING "walletBalance"`,
-            [price, organizationId]
+            [fees.netCents, organizationId]
           );
           await client.query(
             `INSERT INTO "wallet_transaction" (id, "organizationId", type, amount, "balanceAfter", "eventId")
              VALUES ($1, $2, 'event_payment_received', $3, $4, $5)`,
-            [crypto.randomUUID(), organizationId, price, orgBalanceRes.rows[0].walletBalance, eventId]
+            [crypto.randomUUID(), organizationId, fees.netCents, orgBalanceRes.rows[0].walletBalance, eventId]
           );
         } else {
           // Touch the two user rows in a fixed (sorted) order across every payment,
@@ -880,9 +886,11 @@ export async function payForEventWithWallet(eventId: string, categoryId?: string
         );
 
         await client.query(
-          `INSERT INTO "event_payment" (id, "eventId", "userId", amount, currency, status, method)
-           VALUES ($1, $2, $3, $4, 'cad', 'completed', 'wallet')`,
-          [crypto.randomUUID(), eventId, payerId, price]
+          `INSERT INTO "event_payment" (id, "eventId", "userId", amount, currency, status, method, "stripeFeeCents", "platformFeeCents", "netCents")
+           VALUES ($1, $2, $3, $4, 'cad', 'completed', 'wallet', $5, $6, $7)`,
+          organizationId
+            ? [crypto.randomUUID(), eventId, payerId, price, fees.stripeFeeCents, fees.platformFeeCents, fees.netCents]
+            : [crypto.randomUUID(), eventId, payerId, price, null, null, null]
         );
       });
     } catch (e) {
@@ -924,6 +932,14 @@ export async function completeEventStripePayment(
   categoryId?: string,
   pricingTierId?: string
 ): Promise<void> {
+  await assertPaidCheckoutSession(stripeSessionId, {
+    type: "event_payment",
+    refKey: "eventId",
+    refId: eventId,
+    userId: payerId,
+    remainderCents,
+    walletCreditCents,
+  });
   await ensureEventParticipantsTable();
 
   const eventRes = await pool.query(
@@ -1000,14 +1016,19 @@ export async function completeEventStripePayment(
 
     const organizerCreditCents = remainderCents + creditApplied;
     if (organizationId) {
+      const fees = netForCollected(priceCents, organizerCreditCents);
+      await client.query(
+        `UPDATE "event_payment" SET "stripeFeeCents" = $1, "platformFeeCents" = $2, "netCents" = $3 WHERE "stripeSessionId" = $4`,
+        [fees.stripeFeeCents, fees.platformFeeCents, fees.netCents, stripeSessionId]
+      );
       const orgBalanceRes = await client.query(
         `UPDATE "organization" SET "walletBalance" = "walletBalance" + $1 WHERE id = $2 RETURNING "walletBalance"`,
-        [organizerCreditCents, organizationId]
+        [fees.netCents, organizationId]
       );
       await client.query(
         `INSERT INTO "wallet_transaction" (id, "organizationId", type, amount, "balanceAfter", "eventId", "stripeSessionId")
          VALUES ($1, $2, 'event_payment_received', $3, $4, $5, $6)`,
-        [crypto.randomUUID(), organizationId, organizerCreditCents, orgBalanceRes.rows[0].walletBalance, eventId, stripeSessionId]
+        [crypto.randomUUID(), organizationId, fees.netCents, orgBalanceRes.rows[0].walletBalance, eventId, stripeSessionId]
       );
     } else {
       const organizerBalanceRes = await client.query(
@@ -1254,11 +1275,17 @@ async function notifyAdminsOfRefundIssues(
 // refundEventParticipant (a single manual refund, further below) — the two
 // callers differ only in which rows they look up and mark refunded, not in
 // how the money moves.
+// organizationId is the wallet that was actually credited for this payment
+// (null = the organizer's personal wallet). `amount` is the full price the
+// player paid and gets back; an org wallet only gives back the net it was
+// credited (`fees` present), and Playver absorbs the fee difference — see
+// refund-fees.ts for the logging and the repeat-refund charge.
 async function reverseWalletPayment({
   organizerId,
   organizationId,
   payerId,
   amount,
+  fees,
   refKind,
   refId,
   markRefunded,
@@ -1267,22 +1294,40 @@ async function reverseWalletPayment({
   organizationId: string | null;
   payerId: string;
   amount: number;
+  fees?: { stripeFeeCents: number; platformFeeCents: number; netCents: number } | null;
   refKind: "eventId" | "teamId";
   refId: string;
   markRefunded: (client: PoolClient) => Promise<void>;
-}) {
+}): Promise<{ chargedToOrgCents: number }> {
+  let chargedToOrgCents = 0;
+  let newlyFlagged = false;
   await withTransaction(async (client) => {
     let organizerBalanceAfter = 0;
     if (organizationId) {
+      const orgDebitCents = fees ? fees.netCents : amount;
       // Crediting a different table (organization) than the payer (user)
       // removes the same-table deadlock risk the sorted-lock-order trick
       // in the legacy branch below exists for.
       const debit = await client.query(
         `UPDATE "organization" SET "walletBalance" = "walletBalance" - $1 WHERE id = $2 AND "walletBalance" >= $1 RETURNING "walletBalance"`,
-        [amount, organizationId]
+        [orgDebitCents, organizationId]
       );
       if (debit.rowCount === 0) throw new Error("Organization balance too low to refund");
       organizerBalanceAfter = Number(debit.rows[0].walletBalance);
+      if (fees) {
+        const applied = await applyRefundFees(client, {
+          organizationId,
+          refKind,
+          refId,
+          payerId,
+          grossCents: amount,
+          stripeFeeCents: fees.stripeFeeCents,
+          platformFeeCents: fees.platformFeeCents,
+        });
+        chargedToOrgCents = applied.chargedToOrgCents;
+        newlyFlagged = applied.newlyFlagged;
+        organizerBalanceAfter -= chargedToOrgCents;
+      }
       await client.query(`UPDATE "user" SET "walletBalance" = "walletBalance" + $1 WHERE id = $2`, [amount, payerId]);
     } else {
       // Fixed sorted lock order, same invariant as payForEventWithWallet/payForTeamWithWallet —
@@ -1307,7 +1352,7 @@ async function reverseWalletPayment({
       await client.query(
         `INSERT INTO "wallet_transaction" (id, "organizationId", type, amount, "balanceAfter", "${refKind}")
          VALUES ($1, $2, 'refund_sent', $3, $4, $5)`,
-        [crypto.randomUUID(), organizationId, -amount, organizerBalanceAfter, refId]
+        [crypto.randomUUID(), organizationId, -((fees ? fees.netCents : amount) + chargedToOrgCents), organizerBalanceAfter, refId]
       );
     } else {
       await client.query(
@@ -1323,6 +1368,19 @@ async function reverseWalletPayment({
     );
     await markRefunded(client);
   });
+  if (newlyFlagged && organizationId) notifyAdminsOfRefundFlag(organizationId).catch(() => {});
+  return { chargedToOrgCents };
+}
+
+// Fee columns are NULL on payments from before fees existed — those were
+// credited gross, so they're refunded gross with nothing to absorb.
+function feesFromRow(row: { stripeFeeCents: unknown; platformFeeCents: unknown; netCents: unknown }) {
+  if (row.netCents === null || row.netCents === undefined) return null;
+  return {
+    stripeFeeCents: Number(row.stripeFeeCents ?? 0),
+    platformFeeCents: Number(row.platformFeeCents ?? 0),
+    netCents: Number(row.netCents),
+  };
 }
 
 // Refunds every still-unrefunded wallet-funded payment for this event/tournament,
@@ -1338,9 +1396,14 @@ export async function runEventRefundSweep(
   const pendingReview = new Set<string>();
   const failures: { payerName: string | null; amountCents: number; reason: string }[] = [];
 
-  const eventRes = await pool.query(`SELECT title, "registrationMode", "organizerId", "organizationId" FROM "event" WHERE id = $1`, [eventId]);
+  const eventRes = await pool.query(
+    `SELECT title, status, "registrationMode", "organizerId", "organizationId" FROM "event" WHERE id = $1`,
+    [eventId]
+  );
   const event = eventRes.rows[0];
-  if (!event) return { refunded, pendingReview };
+  // Exported from a "use server" file, so it must be safe to call directly:
+  // it only ever refunds events that cancelEvent already cancelled.
+  if (!event || event.status !== "cancelled") return { refunded, pendingReview };
   const isTournament = isTeamEvent(event);
   const organizerId = event.organizerId as string;
   const organizationId = event.organizationId as string | null;
@@ -1348,16 +1411,28 @@ export async function runEventRefundSweep(
   async function refundOne(
     payerId: string,
     amount: number,
+    creditedOrganizationId: string | null,
+    fees: ReturnType<typeof feesFromRow>,
     refKind: "eventId" | "teamId",
     refId: string,
     markRefunded: (client: PoolClient) => Promise<void>
   ) {
-    await reverseWalletPayment({ organizerId, organizationId, payerId, amount, refKind, refId, markRefunded });
+    await reverseWalletPayment({
+      organizerId,
+      organizationId: creditedOrganizationId,
+      payerId,
+      amount,
+      fees,
+      refKind,
+      refId,
+      markRefunded,
+    });
   }
 
   if (isTournament) {
     const rows = await pool.query(
-      `SELECT ttp.id, ttp."teamId", ttp."userId", ttp.amount, u.name as "payerName"
+      `SELECT ttp.id, ttp."teamId", ttp."userId", ttp.amount, ttp."organizationId",
+              ttp."stripeFeeCents", ttp."platformFeeCents", ttp."netCents", u.name as "payerName"
        FROM "tournament_team_payment" ttp
        JOIN "tournament_team" tt ON tt.id = ttp."teamId"
        JOIN "user" u ON u.id = ttp."userId"
@@ -1369,7 +1444,9 @@ export async function runEventRefundSweep(
       const payerId = row.userId as string;
       const amount = Number(row.amount);
       try {
-        await refundOne(payerId, amount, "teamId", row.teamId, (client) =>
+        // Team payments credited the org wallet only once ttp.organizationId
+        // existed; older rows went to the organizer's personal wallet.
+        await refundOne(payerId, amount, row.organizationId ?? null, feesFromRow(row), "teamId", row.teamId, (client) =>
           client.query(`UPDATE "tournament_team_payment" SET "refundedAt" = NOW() WHERE id = $1`, [row.id]).then(() => {})
         );
         refunded.set(payerId, amount);
@@ -1380,7 +1457,7 @@ export async function runEventRefundSweep(
     }
   } else {
     const rows = await pool.query(
-      `SELECT ep.id, ep."userId", ep.amount, u.name as "payerName"
+      `SELECT ep.id, ep."userId", ep.amount, ep."stripeFeeCents", ep."platformFeeCents", ep."netCents", u.name as "payerName"
        FROM "event_payment" ep
        JOIN "user" u ON u.id = ep."userId"
        WHERE ep."eventId" = $1 AND ep.status = 'completed' AND ep.method IN ('wallet', 'stripe_direct') AND ep."refundedAt" IS NULL
@@ -1391,7 +1468,7 @@ export async function runEventRefundSweep(
       const payerId = row.userId as string;
       const amount = Number(row.amount);
       try {
-        await refundOne(payerId, amount, "eventId", eventId, (client) =>
+        await refundOne(payerId, amount, organizationId, feesFromRow(row), "eventId", eventId, (client) =>
           client
             .query(`UPDATE "event_payment" SET status = 'refunded', "refundedAt" = NOW() WHERE id = $1`, [row.id])
             .then(() => {})
@@ -1432,7 +1509,7 @@ export async function runEventRefundSweep(
 // touching anything.
 export async function getEventRefundPreview(
   eventId: string
-): Promise<{ error?: string; count?: number; totalCents?: number }> {
+): Promise<{ error?: string; count?: number; totalCents?: number; feeChargeCents?: number }> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return { error: "Unauthorized" };
 
@@ -1449,13 +1526,23 @@ export async function getEventRefundPreview(
         [eventId]
       )
     : await pool.query(
-        `SELECT COUNT(*)::int as count, COALESCE(SUM(amount), 0)::bigint as total
+        `SELECT COUNT(*)::int as count, COALESCE(SUM(amount), 0)::bigint as total,
+                COALESCE(SUM("stripeFeeCents") FILTER (WHERE "netCents" IS NOT NULL), 0)::bigint as stripe_fees
          FROM "event_payment"
          WHERE "eventId" = $1 AND status = 'completed' AND method IN ('wallet', 'stripe_direct') AND "refundedAt" IS NULL`,
         [eventId]
       );
 
-  return { count: Number(result.rows[0].count), totalCents: Number(result.rows[0].total) };
+  // Org events past the free-refund allowance pay the processing fee on each
+  // refund (refund-fees.ts) — surfaced here so it's never a surprise.
+  let feeChargeCents = 0;
+  const organizationId = authResult.event.organizationId as string | null;
+  if (organizationId && !isTournament) {
+    const status = await getRefundFeeStatus(pool, organizationId, eventId);
+    if (status.chargesProcessingFee) feeChargeCents = Number(result.rows[0].stripe_fees);
+  }
+
+  return { count: Number(result.rows[0].count), totalCents: Number(result.rows[0].total), feeChargeCents };
 }
 
 export async function cancelEvent(
@@ -1560,7 +1647,7 @@ export async function refundEventParticipant(eventId: string, userId: string): P
   }
 
   const paymentRes = await pool.query(
-    `SELECT id, amount FROM "event_payment"
+    `SELECT id, amount, "stripeFeeCents", "platformFeeCents", "netCents" FROM "event_payment"
      WHERE "eventId" = $1 AND "userId" = $2 AND status = 'completed' AND method IN ('wallet', 'stripe_direct') AND "refundedAt" IS NULL`,
     [eventId, userId]
   );
@@ -1574,6 +1661,7 @@ export async function refundEventParticipant(eventId: string, userId: string): P
       organizationId,
       payerId: userId,
       amount,
+      fees: organizationId ? feesFromRow(payment) : null,
       refKind: "eventId",
       refId: eventId,
       markRefunded: async (client) => {

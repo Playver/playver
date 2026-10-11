@@ -35,7 +35,7 @@ export default function OrganizerPayoutSection({ connectOnboarded }: { connectOn
       setShowOnboarding(false);
       getOrganizationWalletOverview()
         .then((overview) => {
-          setOnboarded(overview.connectOnboarded);
+          setOnboarded(overview.payoutReadiness.state === "ready");
           router.refresh();
         })
         .catch(() => {});
@@ -61,11 +61,9 @@ export default function OrganizerPayoutSection({ connectOnboarded }: { connectOn
           <ConnectPayoutOnboarding
             fetchClientSecret={fetchConnectClientSecret}
             onExit={handleOnboardingExit}
-            onLoadError={() => {
-              queueMicrotask(() => {
-                setError(t("wizardPaymentsError"));
-                setShowOnboarding(false);
-              });
+            onLoadError={(message) => {
+              setError(message ? `${t("paymentsErrorSetup")} (${message})` : t("paymentsErrorSetup"));
+              setShowOnboarding(false);
             }}
           />
         </div>

@@ -301,6 +301,12 @@ export type PaymentRecord = {
   activityName: string;
   type: PaymentType;
   amountCents: number;
+  // Fee split taken when the payment came in (see payment-fees.ts). null on
+  // payments from before fees existed, and on legacy team payments that went
+  // to the organizer's personal wallet — those were credited in full.
+  stripeFeeCents: number | null;
+  platformFeeCents: number | null;
+  netCents: number | null;
   status: PaymentStatus;
   paymentDate: string;
   // Real "method" column value ('wallet' | 'stripe_direct' | legacy
@@ -338,7 +344,8 @@ export async function getOrganizationPayments(): Promise<OrganizationPayments> {
     `SELECT ep.id AS id, u.name AS "personName", u.email AS "personEmail", u.image AS "personImage",
        e.title AS "activityName", 'event' AS type, ep.amount AS "amountCents", ep.status AS status,
        ep."createdAt" AS "paymentDate", ep.method AS method, ep."stripeSessionId" AS "stripeSessionId",
-       ep."eventId" AS "eventId", ep."userId" AS "userId"
+       ep."eventId" AS "eventId", ep."userId" AS "userId",
+       ep."stripeFeeCents" AS "stripeFeeCents", ep."platformFeeCents" AS "platformFeeCents", ep."netCents" AS "netCents"
      FROM "event_payment" ep
      JOIN "event" e ON e.id = ep."eventId"
      JOIN "user" u ON u.id = ep."userId"
@@ -350,7 +357,8 @@ export async function getOrganizationPayments(): Promise<OrganizationPayments> {
        e.title, 'team', ttp.amount,
        CASE WHEN ttp."refundedAt" IS NOT NULL THEN 'refunded' ELSE 'completed' END,
        ttp."createdAt", NULL::text, NULL::text,
-       tt."tournamentId", ttp."userId"
+       tt."tournamentId", ttp."userId",
+       ttp."stripeFeeCents", ttp."platformFeeCents", ttp."netCents"
      FROM "tournament_team_payment" ttp
      JOIN "tournament_team" tt ON tt.id = ttp."teamId"
      JOIN "event" e ON e.id = tt."tournamentId"
@@ -369,6 +377,9 @@ export async function getOrganizationPayments(): Promise<OrganizationPayments> {
     activityName: row.activityName,
     type: row.type as PaymentType,
     amountCents: Number(row.amountCents),
+    stripeFeeCents: row.stripeFeeCents === null ? null : Number(row.stripeFeeCents),
+    platformFeeCents: row.platformFeeCents === null ? null : Number(row.platformFeeCents),
+    netCents: row.netCents === null ? null : Number(row.netCents),
     status: row.status === "refunded" ? "refunded" : "paid",
     paymentDate: new Date(row.paymentDate).toISOString(),
     method: row.method,

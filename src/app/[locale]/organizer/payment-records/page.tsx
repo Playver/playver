@@ -8,6 +8,7 @@ import { ForbiddenError } from "@/lib/organizer-errors";
 import { getOrganizationPayments } from "@/app/actions/organizer-registrations";
 import ComingSoonPanel from "@/components/organizer/ComingSoonPanel";
 import PaymentsLedger from "@/components/organizer/PaymentsLedger";
+import FeeExplainer from "@/components/organizer/FeeExplainer";
 
 export default async function PaymentRecordsPage() {
   const t = await getTranslations("Organizer");
@@ -35,6 +36,10 @@ export default async function PaymentRecordsPage() {
       <h1 className="text-3xl font-extrabold text-zinc-900 mb-6" style={{ fontFamily: "var(--font-playfair)" }}>
         {t("navPaymentRecords")}
       </h1>
+
+      <div className="mb-8">
+        <FeeExplainer />
+      </div>
 
       <PaymentsLedger
         payments={data.payments}

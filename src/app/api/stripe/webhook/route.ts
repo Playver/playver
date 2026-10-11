@@ -5,6 +5,7 @@ import { stripe } from "@/lib/stripe";
 import { pool } from "@/lib/db";
 import { resend, FROM, layout } from "@/lib/emails/_shared";
 import { completeCheckoutSession } from "@/lib/stripe-checkout-completion";
+import { advanceAllOpenWithdrawals, advanceOrganizationWithdrawals, markDeposited, markPayoutFailed } from "@/lib/payouts";
 
 async function flagPaymentDisputeForReview(charge: Stripe.Charge, reason: string) {
   console.error("[stripe webhook] payment dispute/refund needs manual review", {
@@ -39,6 +40,13 @@ async function handlePlatformEvent(event: Stripe.Event) {
     return;
   }
 
+  // Playver's own balance just grew — any withdrawal queued because recent
+  // card payments hadn't settled yet can go out now.
+  if (event.type === "balance.available") {
+    await advanceAllOpenWithdrawals();
+    return;
+  }
+
   if (event.type === "charge.refunded") {
     await flagPaymentDisputeForReview(event.data.object, "refunded");
     return;
@@ -53,6 +61,30 @@ async function handlePlatformEvent(event: Stripe.Event) {
 }
 
 async function handleConnectAccountEvent(event: Stripe.Event) {
+  // Organizer payouts (src/lib/payouts.ts): payout.paid confirms the money
+  // reached their bank; payout.failed means the bank rejected it and Stripe
+  // returned it to their Stripe balance — they're asked to fix their bank.
+  if (event.type === "payout.paid") {
+    await markDeposited(event.data.object);
+    revalidatePath("/organizer/payments");
+    return;
+  }
+  if (event.type === "payout.failed") {
+    await markPayoutFailed(event.data.object);
+    revalidatePath("/organizer/payments");
+    return;
+  }
+
+  // The organizer changed their bank account (Stripe reports that as an
+  // external_account event, not account.updated) — a payout their old bank
+  // rejected can go out again now.
+  if (event.type === "account.external_account.created" || event.type === "account.external_account.updated") {
+    const org = await pool.query(`SELECT id FROM "organization" WHERE "stripeConnectAccountId" = $1`, [event.account]);
+    if (org.rows[0]) await advanceOrganizationWithdrawals(org.rows[0].id);
+    revalidatePath("/organizer/payments");
+    return;
+  }
+
   if (event.type !== "account.updated") return;
   const account = event.data.object;
   const onboarded = Boolean(account.details_submitted && account.payouts_enabled);
@@ -66,10 +98,13 @@ async function handleConnectAccountEvent(event: Stripe.Event) {
     return;
   }
 
-  await pool.query(`UPDATE "organization" SET "stripeConnectOnboarded" = $1 WHERE "stripeConnectAccountId" = $2`, [
-    onboarded,
-    account.id,
-  ]);
+  const org = await pool.query(
+    `UPDATE "organization" SET "stripeConnectOnboarded" = $1 WHERE "stripeConnectAccountId" = $2 RETURNING id`,
+    [onboarded, account.id]
+  );
+  // A bank-account change or newly enabled payouts can unblock a payout
+  // that was waiting on it.
+  if (onboarded && org.rows[0]) await advanceOrganizationWithdrawals(org.rows[0].id);
   revalidatePath("/organizer/payments");
 }
 

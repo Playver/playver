@@ -42,7 +42,7 @@ export default async function OrganizerSettingsPage() {
   try {
     const overview = await getOrganizationWalletOverview();
     const { role } = await requireOrganizationPermission("VIEW_PAYMENTS");
-    if (hasPermission(role, "MANAGE_PAYMENTS")) connectOnboarded = overview.connectOnboarded;
+    if (hasPermission(role, "MANAGE_PAYMENTS")) connectOnboarded = overview.payoutReadiness.state === "ready";
   } catch (error) {
     if (!(error instanceof ForbiddenError)) throw error;
   }

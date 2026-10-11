@@ -34,6 +34,8 @@ import {
 } from "@/lib/emails";
 import { resend, FROM, layout, ctaButton, BASE_URL } from "@/lib/emails/_shared";
 import { ensureTournamentTables } from "@/lib/tournament-tables";
+import { calculateFees, netForCollected } from "@/lib/payment-fees";
+import { assertPaidCheckoutSession } from "@/lib/verify-checkout-session";
 import { ensureEventRegistrationTables, resolveRegistrationPrice } from "@/lib/event-registration-tables";
 import { assertCanManageTournament } from "@/app/actions/game";
 
@@ -1034,7 +1036,7 @@ export async function payForTeamWithWallet(teamId: string): Promise<{ error?: st
 
     const result = await pool.query(
       `SELECT tt.id, tt.name, tt."captainId", tt.status, e.title, e.sport, e.location, e.price, e.status as "tournamentStatus",
-              e.id as "tournamentId", e."organizerId", e."startDateTime", e."endDateTime", ec.price as "categoryPrice"
+              e.id as "tournamentId", e."organizerId", e."organizationId", e."startDateTime", e."endDateTime", ec.price as "categoryPrice"
        FROM "tournament_team" tt
        JOIN "event" e ON e.id = tt."tournamentId"
        LEFT JOIN "event_category" ec ON ec.id = tt."categoryId"
@@ -1055,6 +1057,8 @@ export async function payForTeamWithWallet(teamId: string): Promise<{ error?: st
 
     const payerId = team.captainId as string;
     const organizerId = team.organizerId as string;
+    const organizationId = team.organizationId as string | null;
+    const fees = calculateFees(price);
 
     let alreadyActive = false;
     try {
@@ -1069,38 +1073,61 @@ export async function payForTeamWithWallet(teamId: string): Promise<{ error?: st
           return;
         }
 
-        // Fixed (sorted) lock order across the two user rows, regardless of who's
-        // paying whom, so concurrent transfers between the same pair can't deadlock.
-        const orderedIds = [payerId, organizerId].sort();
         let payerBalanceAfter = 0;
-        for (const id of orderedIds) {
-          if (id === payerId) {
-            const debit = await client.query(
-              `UPDATE "user" SET "walletBalance" = "walletBalance" - $1 WHERE id = $2 AND "walletBalance" >= $1 RETURNING "walletBalance"`,
-              [price, payerId]
-            );
-            if (debit.rowCount === 0) throw new InsufficientFundsError();
-            payerBalanceAfter = Number(debit.rows[0].walletBalance);
-          } else {
-            await client.query(`UPDATE "user" SET "walletBalance" = "walletBalance" + $1 WHERE id = $2`, [price, organizerId]);
+        if (organizationId) {
+          // Org tournament: same as org events — the org wallet is credited
+          // the net after fees (different table, no lock-order concern).
+          const debit = await client.query(
+            `UPDATE "user" SET "walletBalance" = "walletBalance" - $1 WHERE id = $2 AND "walletBalance" >= $1 RETURNING "walletBalance"`,
+            [price, payerId]
+          );
+          if (debit.rowCount === 0) throw new InsufficientFundsError();
+          payerBalanceAfter = Number(debit.rows[0].walletBalance);
+          const orgBalanceRes = await client.query(
+            `UPDATE "organization" SET "walletBalance" = "walletBalance" + $1 WHERE id = $2 RETURNING "walletBalance"`,
+            [fees.netCents, organizationId]
+          );
+          await client.query(
+            `INSERT INTO "wallet_transaction" (id, "organizationId", type, amount, "balanceAfter", "teamId")
+             VALUES ($1, $2, 'event_payment_received', $3, $4, $5)`,
+            [crypto.randomUUID(), organizationId, fees.netCents, orgBalanceRes.rows[0].walletBalance, teamId]
+          );
+        } else {
+          // Fixed (sorted) lock order across the two user rows, regardless of who's
+          // paying whom, so concurrent transfers between the same pair can't deadlock.
+          const orderedIds = [payerId, organizerId].sort();
+          for (const id of orderedIds) {
+            if (id === payerId) {
+              const debit = await client.query(
+                `UPDATE "user" SET "walletBalance" = "walletBalance" - $1 WHERE id = $2 AND "walletBalance" >= $1 RETURNING "walletBalance"`,
+                [price, payerId]
+              );
+              if (debit.rowCount === 0) throw new InsufficientFundsError();
+              payerBalanceAfter = Number(debit.rows[0].walletBalance);
+            } else {
+              await client.query(`UPDATE "user" SET "walletBalance" = "walletBalance" + $1 WHERE id = $2`, [price, organizerId]);
+            }
           }
+          const organizerBalanceRes = await client.query(`SELECT "walletBalance" FROM "user" WHERE id = $1`, [organizerId]);
+          await client.query(
+            `INSERT INTO "wallet_transaction" (id, "userId", type, amount, "balanceAfter", "teamId")
+             VALUES ($1, $2, 'event_payment_received', $3, $4, $5)`,
+            [crypto.randomUUID(), organizerId, price, organizerBalanceRes.rows[0].walletBalance, teamId]
+          );
         }
-        const organizerBalanceRes = await client.query(`SELECT "walletBalance" FROM "user" WHERE id = $1`, [organizerId]);
 
         await client.query(
           `INSERT INTO "wallet_transaction" (id, "userId", type, amount, "balanceAfter", "teamId")
            VALUES ($1, $2, 'event_payment_sent', $3, $4, $5)`,
           [crypto.randomUUID(), payerId, -price, payerBalanceAfter, teamId]
         );
-        await client.query(
-          `INSERT INTO "wallet_transaction" (id, "userId", type, amount, "balanceAfter", "teamId")
-           VALUES ($1, $2, 'event_payment_received', $3, $4, $5)`,
-          [crypto.randomUUID(), organizerId, price, organizerBalanceRes.rows[0].walletBalance, teamId]
-        );
 
         await client.query(
-          `INSERT INTO "tournament_team_payment" (id, "teamId", "userId", amount) VALUES ($1, $2, $3, $4)`,
-          [crypto.randomUUID(), teamId, payerId, price]
+          `INSERT INTO "tournament_team_payment" (id, "teamId", "userId", amount, "organizationId", "stripeFeeCents", "platformFeeCents", "netCents")
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          organizationId
+            ? [crypto.randomUUID(), teamId, payerId, price, organizationId, fees.stripeFeeCents, fees.platformFeeCents, fees.netCents]
+            : [crypto.randomUUID(), teamId, payerId, price, null, null, null, null]
         );
       });
     } catch (e) {
@@ -1181,10 +1208,18 @@ export async function completeTeamStripePayment(
   walletCreditCents: number,
   stripeSessionId: string
 ): Promise<void> {
+  await assertPaidCheckoutSession(stripeSessionId, {
+    type: "team_payment",
+    refKey: "teamId",
+    refId: teamId,
+    userId: payerId,
+    remainderCents,
+    walletCreditCents,
+  });
   await ensureTournamentTables();
 
   const result = await pool.query(
-    `SELECT tt.id, tt.name, e.title, e.sport, e.location, e."organizerId", e.id as "tournamentId",
+    `SELECT tt.id, tt.name, e.title, e.sport, e.location, e."organizerId", e."organizationId", e.id as "tournamentId",
             e."startDateTime", e."endDateTime", e.status as "tournamentStatus"
      FROM "tournament_team" tt
      JOIN "event" e ON e.id = tt."tournamentId"
@@ -1239,15 +1274,34 @@ export async function completeTeamStripePayment(
     }
 
     const organizerCreditCents = remainderCents + creditApplied;
-    const organizerBalanceRes = await client.query(
-      `UPDATE "user" SET "walletBalance" = "walletBalance" + $1 WHERE id = $2 RETURNING "walletBalance"`,
-      [organizerCreditCents, organizerId]
-    );
-    await client.query(
-      `INSERT INTO "wallet_transaction" (id, "userId", type, amount, "balanceAfter", "teamId", "stripeSessionId")
-       VALUES ($1, $2, 'event_payment_received', $3, $4, $5, $6)`,
-      [crypto.randomUUID(), organizerId, organizerCreditCents, organizerBalanceRes.rows[0].walletBalance, teamId, stripeSessionId]
-    );
+    const organizationId = team.organizationId as string | null;
+    if (organizationId) {
+      const fees = netForCollected(priceCents, organizerCreditCents);
+      await client.query(
+        `UPDATE "tournament_team_payment" SET "organizationId" = $1, "stripeFeeCents" = $2, "platformFeeCents" = $3, "netCents" = $4
+         WHERE "teamId" = $5`,
+        [organizationId, fees.stripeFeeCents, fees.platformFeeCents, fees.netCents, teamId]
+      );
+      const orgBalanceRes = await client.query(
+        `UPDATE "organization" SET "walletBalance" = "walletBalance" + $1 WHERE id = $2 RETURNING "walletBalance"`,
+        [fees.netCents, organizationId]
+      );
+      await client.query(
+        `INSERT INTO "wallet_transaction" (id, "organizationId", type, amount, "balanceAfter", "teamId", "stripeSessionId")
+         VALUES ($1, $2, 'event_payment_received', $3, $4, $5, $6)`,
+        [crypto.randomUUID(), organizationId, fees.netCents, orgBalanceRes.rows[0].walletBalance, teamId, stripeSessionId]
+      );
+    } else {
+      const organizerBalanceRes = await client.query(
+        `UPDATE "user" SET "walletBalance" = "walletBalance" + $1 WHERE id = $2 RETURNING "walletBalance"`,
+        [organizerCreditCents, organizerId]
+      );
+      await client.query(
+        `INSERT INTO "wallet_transaction" (id, "userId", type, amount, "balanceAfter", "teamId", "stripeSessionId")
+         VALUES ($1, $2, 'event_payment_received', $3, $4, $5, $6)`,
+        [crypto.randomUUID(), organizerId, organizerCreditCents, organizerBalanceRes.rows[0].walletBalance, teamId, stripeSessionId]
+      );
+    }
   });
 
   if (alreadyProcessed) return;

@@ -153,6 +153,7 @@ export default function PaymentsLedger({
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t("paymentRecordsColumnActivity")}</th>
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t("paymentRecordsColumnType")}</th>
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t("paymentRecordsColumnAmount")}</th>
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t("paymentRecordsColumnNet")}</th>
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t("paymentRecordsColumnStatus")}</th>
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t("paymentRecordsColumnDate")}</th>
               </tr>
@@ -183,6 +184,9 @@ export default function PaymentsLedger({
                       {p.type === "event" ? t("paymentRecordsTypeEvent") : t("paymentRecordsTypeTeam")}
                     </td>
                     <td className="px-5 py-3 font-semibold text-zinc-900 whitespace-nowrap">{formatCents(p.amountCents, locale)}</td>
+                    <td className="px-5 py-3 font-semibold text-emerald-700 whitespace-nowrap">
+                      {p.status === "refunded" ? <span className="text-zinc-400">—</span> : formatCents(p.netCents ?? p.amountCents, locale)}
+                    </td>
                     <td className="px-5 py-3">
                       <span className={`text-xs font-semibold rounded-full px-2.5 py-1 ${statusBadgeClass(p.status)}`}>
                         {p.status === "paid" ? t("paymentRecordsFilterPaid") : t("paymentRecordsFilterRefunded")}

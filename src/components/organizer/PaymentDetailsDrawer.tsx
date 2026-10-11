@@ -113,6 +113,27 @@ export default function PaymentDetailsDrawer({
             </span>
           </div>
 
+          {payment.netCents !== null && (
+            <dl className="rounded-xl bg-zinc-50 border border-zinc-200 p-4 flex flex-col gap-1.5 text-sm">
+              <div className="flex justify-between">
+                <dt className="text-zinc-600">{t("feesRowPlayerPays")}</dt>
+                <dd className="font-semibold text-zinc-800">{formatCents(payment.amountCents, locale)}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-zinc-600">{t("feesProcessingLabel")}</dt>
+                <dd className="text-zinc-600">−{formatCents(payment.stripeFeeCents ?? 0, locale)}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-zinc-600">{t("feesPlatformLabel")}</dt>
+                <dd className="text-zinc-600">−{formatCents(payment.platformFeeCents ?? 0, locale)}</dd>
+              </div>
+              <div className="flex justify-between border-t border-zinc-200 pt-1.5 mt-0.5">
+                <dt className="font-bold text-zinc-900">{t("feesRowYouReceive")}</dt>
+                <dd className="font-bold text-emerald-700">{formatCents(payment.netCents, locale)}</dd>
+              </div>
+            </dl>
+          )}
+
           <dl className="flex flex-col gap-4 text-sm">
             <div>
               <dt className="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-0.5">{t("paymentRecordsDrawerCustomer")}</dt>

@@ -34,7 +34,7 @@ export default function EventCancelPostponeButton({
   const [error, setError] = useState("");
   const [newStart, setNewStart] = useState(startDateTime.slice(0, 16));
   const [newEnd, setNewEnd] = useState(endDateTime.slice(0, 16));
-  const [refundPreview, setRefundPreview] = useState<{ count: number; totalCents: number } | null>(null);
+  const [refundPreview, setRefundPreview] = useState<{ count: number; totalCents: number; feeChargeCents: number } | null>(null);
   const [cancelResult, setCancelResult] = useState<CancelResult | null>(null);
 
   function close() {
@@ -49,7 +49,11 @@ export default function EventCancelPostponeButton({
     setView("cancel-confirm");
     if (!isPaid) return;
     const preview = await getEventRefundPreview(eventId);
-    if (!preview.error) setRefundPreview({ count: preview.count ?? 0, totalCents: preview.totalCents ?? 0 });
+    if (!preview.error) setRefundPreview({
+        count: preview.count ?? 0,
+        totalCents: preview.totalCents ?? 0,
+        feeChargeCents: preview.feeChargeCents ?? 0,
+      });
   }
 
   async function handleCancel() {
@@ -150,6 +154,11 @@ export default function EventCancelPostponeButton({
                         amount: formatPrice(refundPreview.totalCents),
                       })}
                     </p>
+                    {refundPreview.feeChargeCents > 0 && (
+                      <p className="mt-1.5 text-sm text-amber-800">
+                        {t("cancelRefundFeeCharge", { amount: formatPrice(refundPreview.feeChargeCents) })}
+                      </p>
+                    )}
                   </div>
                 )}
                 {error && <p className="text-sm font-semibold text-red-600">{error}</p>}

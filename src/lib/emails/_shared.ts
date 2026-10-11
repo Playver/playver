@@ -66,6 +66,11 @@ export function layout(body: string) {
 </html>`;
 }
 
+// For user-entered text (org names, event titles) interpolated into HTML.
+export function escapeHtml(v: string) {
+  return v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+}
+
 export function ctaButton(href: string, label: string) {
   return `<a href="${href}" style="display:inline-block;margin-top:28px;padding:14px 28px;background:#e21d12;color:#fff;font-weight:700;font-size:14px;border-radius:10px;text-decoration:none;">${label}</a>`;
 }
