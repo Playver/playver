@@ -20,7 +20,7 @@ Events/tournaments used to be creatable by any logged-in athlete directly. That 
 | Framework | Next.js 16 (App Router), React 19, TypeScript | **Next 16 has real breaking changes from what you may know** — e.g. middleware is `src/proxy.ts`, not `middleware.ts`. See `AGENTS.md`. Check `node_modules/next/dist/docs/` before assuming an API works the way it used to. |
 | Database | Postgres via `@neondatabase/serverless` | **No ORM.** Every query is raw SQL through a pooled `Pool` (see §5). |
 | Auth | `better-auth` | Email/password + Google OAuth. Session-cookie based. |
-| Payments | `stripe` (Connect Express accounts) | Two separate money pools — athlete wallets and org wallets — both funded via Stripe Checkout and paid out via Stripe Connect. See §8. |
+| Payments | `stripe` (Connect, embedded components) | Players pay Playver; org wallets are credited the net after fees and paid out to the org's connected account and bank. Athlete wallets hold credit only. See §8. |
 | Email | `resend` | Transactional email only (welcome, receipts, cancellations, reminders). |
 | File uploads | `uploadthing` | Event covers, org logos/covers, profile photos, game gallery media. |
 | i18n | `next-intl` | English + French, kept in exact sync. See §9. |
@@ -89,8 +89,8 @@ There is **no declarative schema file** (no Prisma/Drizzle, no `schema.sql`). Ta
 | `organizer-people.ts` | Org member roster + email invitations (7-day expiry). |
 | `organizer-registrations.ts` | Organizer's view of who's registered for their events. |
 | `organizer-events.ts` | Thin organizer-scoped read layer over `event.ts`. |
-| `organizer-wallet.ts` | Org wallet + Stripe Connect payouts. |
-| `wallet.ts` | Athlete's personal wallet + Stripe Connect payouts — **parallel implementation to `organizer-wallet.ts`**, not shared (see §8). |
+| `organizer-wallet.ts` | Org wallet overview, payout setup, withdrawals (engine in `src/lib/payouts.ts`). |
+| `wallet.ts` | Athlete's personal wallet (top-ups, credit, refunds received; no bank payouts). |
 | `team.ts` | Standalone teams (outside tournaments) + membership. |
 | `athlete.ts` | Public athlete profiles, profile fields, game history. |
 | `miniEvent.ts` | Mini-events / side competitions inside a tournament. |
@@ -106,16 +106,20 @@ Almost every mutating action in the organizer-scoped files follows the same shap
 
 ## 8. Money flow
 
-Two Stripe Connect Express integrations exist **in parallel, not shared**: an athlete's personal wallet (`wallet.ts`) and an organization's wallet (`organizer-wallet.ts`). Both:
-- Credit on successful Stripe Checkout for a paid event, or on internal wallet-to-wallet event payment.
-- Enforce a **48-hour withdrawal hold** after an event ends (funds stay held indefinitely if the event was cancelled, so refunds always have money to draw from) and a **$10 minimum withdrawal**.
-- Pay out via a Stripe Connect Express account tied to the user or the org respectively.
+Players always pay **Playver's** Stripe account (Checkout, or their Playver wallet balance). Nothing is charged on an organizer's account.
 
-`MIN_WITHDRAWAL_CENTS`, `WITHDRAWAL_HOLD_HOURS`, and `InsufficientFundsError` are **copy-pasted between the two files**, not shared from a common module. This is known debt — if you change one of these rules, change it in both files, and consider factoring the shared logic out while you're there.
+- **Fees** (`src/lib/payment-fees.ts`): on every paid registration for an org event or org tournament, Stripe's processing fee (2.9% + $0.30) and Playver's 5% are taken from the registration price; the org wallet is credited the rest. The split is stored on `event_payment` / `tournament_team_payment` (`stripeFeeCents`, `platformFeeCents`, `netCents`; NULL on payments from before fees, which were credited gross). Change the rates only there.
+- **Which wallet**: an event or tournament with an `organizationId` credits the **org wallet** (`organization.walletBalance`; team payments record it in `tournament_team_payment.organizationId`). Events without one are legacy and credit the organizer's **personal wallet** (`user.walletBalance`) the full price, no fees. Personal wallets can be spent on other events but no longer pay out to a bank.
+- **Crediting is verified**: before a Checkout session credits anything, `src/lib/verify-checkout-session.ts` re-fetches it from Stripe and checks it's paid for the right type, event/team, user and amount. The webhook and the success page both call the same idempotent completion code.
+- **48-hour hold** (`src/lib/org-holds.ts`, and `wallet.ts` for personal wallets): money from an event can't be withdrawn until 48h after it ends, or at all while it's cancelled, so refunds always have funds. Anti-fraud; don't relax it without a reason.
+- **Withdrawals** (`organizer-wallet.ts` → `src/lib/payouts.ts`): the org withdraws everything available (no amount, no minimum). Each `wallet_withdrawal` is advanced by a locked step function: **transfer** from Playver to the org's connected account (`transfer_group` = withdrawal id), then **payout** from that account to its bank (`metadata.withdrawalId`). Connected accounts are on a **manual** payout schedule so each withdrawal is exactly one payout. Each attempt uses a fresh idempotency key and first adopts a transfer/payout that already exists, so retries never double-pay. Unsettled platform balance stays queued until `balance.available`; a failed payout (even after "paid") returns the money and asks for a new bank, and a bank change retries it.
+- **Webhooks** (`src/app/api/stripe/webhook/route.ts`): platform `checkout.session.completed`, `balance.available`; connected-account `account.updated`, `account.external_account.created/updated`, `payout.paid`, `payout.failed`. All must be subscribed in each Stripe environment.
+- **Daily cron** (`/api/cron/payouts`, `vercel.json`, needs `CRON_SECRET`): retries open withdrawals, chases overdue payouts, sends "funds available" emails, reconciles every org wallet against its ledger and recent transfers against Stripe, and emails super admins about anything stuck.
+- **Refunds**: the player gets the full price back to their Playver wallet; the org wallet gives back the net it received. Playver absorbs the fees until an org passes 2 refunded events or $100 absorbed in 90 days; past that the org is also charged the processing fee, flagged (`organization.refundFeeFlaggedAt`), and admins are emailed. Fees the wallet can't cover are recorded as owed and taken from the next withdrawal (`src/lib/refund-fees.ts`, table `refund_fee_absorption`).
 
-Which wallet a payment lands in is decided by whether the event has an `organizationId` (org wallet) or not (legacy personal wallet) — see the branching in `event.ts`'s payment-completion functions.
+`wallet_transaction` is the ledger for every balance change (personal and org); the cron checks balances against it.
 
-Connect **onboarding** (the KYC/bank-account form) renders inline via Stripe Connect embedded components (`@stripe/connect-js`, `src/components/payments/ConnectPayoutOnboarding.tsx`) styled to Playver's branding, not a redirect to Stripe's hosted `connect.stripe.com` — see `docs/cashout-refunds-cancellations.md` for the full write-up of that plus the cashout/refund/cancellation flows end to end.
+Connect **onboarding** (the KYC/bank-account form) and later bank changes render inline via Stripe Connect embedded components (`@stripe/connect-js`, `src/components/payments/ConnectPayoutOnboarding.tsx`) styled to Playver's branding — no redirect or popup to Stripe. Accounts are created with Playver collecting requirements and no Stripe dashboard for the org. If the panel can't load it shows the reason instead of an empty box. See `docs/cashout-refunds-cancellations.md` for the policy background and `docs/how-to-test-payments.md` for the test checklist.
 
 **Stripe safety rule**: always confirm you're using `sk_test_...` keys before any payment testing, live or local. Never use `sk_live_...` outside of actually deploying to production. See `docs/stripe-testing.md` for the full test workflow (test-mode Connect onboarding gotchas, wallet-funded join testing, held-balance expiry testing).
 
@@ -128,7 +132,7 @@ Connect **onboarding** (the KYC/bank-account form) renders inline via Stripe Con
 
 ## 10. Testing
 
-Vitest (`npm test`), no config file (running on defaults). Coverage today is **narrow and honest about it**: four pure-function unit test files, all under `src/lib/` — `slug.test.ts`, `organizer-permissions.test.ts`, `organizer-invitations.test.ts`, `organization-completeness.test.ts`. There is currently **no test coverage** of `src/app/actions/` (the entire backend), the Stripe webhook, or any component. New pure-logic helpers in `src/lib/` should get a colocated `*.test.ts` following the existing pattern; anything touching the DB is currently verified manually (see `docs/stripe-testing.md` for the manual Stripe verification workflow).
+Vitest (`npm test`), no config file (running on defaults). Coverage today is **narrow and honest about it**: five pure-function unit test files, all under `src/lib/` — `slug.test.ts`, `organizer-permissions.test.ts`, `organizer-invitations.test.ts`, `organization-completeness.test.ts`, `payment-fees.test.ts`. There is currently **no test coverage** of `src/app/actions/` (the entire backend), the Stripe webhook, or any component. New pure-logic helpers in `src/lib/` should get a colocated `*.test.ts` following the existing pattern; anything touching the DB is currently verified manually (see `docs/stripe-testing.md` for the manual Stripe verification workflow).
 
 ## 11. "I want to work on X, where do I look"
 
@@ -136,7 +140,7 @@ Vitest (`npm test`), no config file (running on defaults). Coverage today is **n
 |---|---|
 | Event creation/management | `src/app/actions/event.ts`, `src/components/events/`, `src/app/[locale]/events/`, `src/app/[locale]/organizer/events/` |
 | Organizer roles/permissions | `src/lib/organizer-permissions.ts`, `src/app/actions/organization.ts` |
-| Org wallet / Stripe Connect payouts | `src/app/actions/organizer-wallet.ts`, `src/app/[locale]/organizer/payments/` |
+| Org wallet / Stripe Connect payouts | `src/app/actions/organizer-wallet.ts`, `src/lib/payouts.ts`, `src/lib/payment-fees.ts`, `src/lib/refund-fees.ts`, `src/app/api/cron/payouts/`, `src/app/[locale]/organizer/payments/` |
 | Athlete wallet | `src/app/actions/wallet.ts`, `src/app/[locale]/dashboard/wallet/` |
 | Org creation wizard | `src/components/organizer/create-wizard/` (`CreateOrganizationWizard.tsx` + `Step1Profile`/`Step2Manage`/`Step3Agreement`/`Step4Done`) |
 | Logged-in home feed (`/`) | `src/components/home-feed/`, `src/app/[locale]/page.tsx` |
@@ -150,5 +154,5 @@ Vitest (`npm test`), no config file (running on defaults). Coverage today is **n
 
 - **Next 16 breaking changes** — see `AGENTS.md`; don't assume training-data knowledge of Next.js APIs is current, check `node_modules/next/dist/docs/`.
 - **No migration ordering/versioning** (§5) — read recent migration scripts before writing a new one; know whether a table is migration-owned or `ensure*()`-owned before changing it.
-- **Duplicated wallet constants** between `wallet.ts` and `organizer-wallet.ts` (§8).
+- **Duplicated hold constant**: `WITHDRAWAL_HOLD_HOURS` lives in both `wallet.ts` and `src/lib/org-holds.ts` — change both.
 - **Two DB env vars**: `DATABASE_URL` (your local/dev DB) and `PROD_DATABASE_URL` (production) — migration scripts run against both when both are set in `.env.local`. Be deliberate about which one you're pointed at before running anything destructive.

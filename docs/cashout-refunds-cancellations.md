@@ -1,5 +1,12 @@
 # Cashout, refunds & cancellations
 
+> **Partly out of date (Oct 2026).** Fees (2.9% + $0.30 Stripe, 5% Playver),
+> withdraw-everything payouts (transfer → manual payout, no $10 minimum),
+> org-only payouts and refund-fee tracking replaced the cashout parts below.
+> `ARCHITECTURE.md` §8 is the current summary; the cancellation/postponement
+> and refund flows here are still accurate except that the org now returns
+> its net, not the full price.
+
 How money moves from a player's card into an organizer's bank account, and
 what happens when an event is cancelled or postponed. This is a
 documentation pass over existing, working functionality — nothing described
