@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { Link, usePathname } from "@/i18n/routing";
 import LanguageToggle from "@/components/layout/LanguageToggle";
 import MobileBottomNav from "@/components/layout/MobileBottomNav";
+import SearchButton from "@/components/search/SearchButton";
 // Site-wide top nav, rendered on nearly every page. Renders MobileBottomNav
 // for small screens.
 import { useSession, signOut } from "@/lib/auth-client";
@@ -83,7 +84,10 @@ export default function Navbar() {
           ))}
         </nav>
 
-        <div className="ml-auto flex items-center gap-1.5 sm:gap-3 shrink-0">
+        <SearchButton variant="pill" className="hidden md:flex ml-auto w-64 xl:w-80" />
+
+        <div className="ml-auto md:ml-0 flex items-center gap-1.5 sm:gap-3 shrink-0">
+          <SearchButton variant="icon" className="md:hidden" />
           <LanguageToggle />
 
           {firstName ? (

@@ -149,10 +149,13 @@ Vitest (`npm test`), no config file (running on defaults). Coverage today is **n
 | Tournaments | `src/app/actions/tournament.ts`, `src/app/actions/game.ts`, `src/components/tournaments/` |
 | Translations | `messages/en.json` + `messages/fr.json`, keep in sync |
 | Stripe webhook handling | `src/app/api/stripe/webhook/route.ts` |
+| Site-wide search (athletes, orgs, events) | `src/lib/search.ts`, `src/app/api/search/route.ts`, `src/components/search/`, `src/app/[locale]/search/` |
+| Share buttons + link previews | `src/components/share/ShareButton.tsx`, `src/lib/share-metadata.ts`, `src/lib/share-info.ts` |
 
 ## 12. Known quirks, in one place
 
 - **Next 16 breaking changes** — see `AGENTS.md`; don't assume training-data knowledge of Next.js APIs is current, check `node_modules/next/dist/docs/`.
 - **No migration ordering/versioning** (§5) — read recent migration scripts before writing a new one; know whether a table is migration-owned or `ensure*()`-owned before changing it.
 - **Duplicated hold constant**: `WITHDRAWAL_HOLD_HOURS` lives in both `wallet.ts` and `src/lib/org-holds.ts` — change both.
+- **Staging hides other orgs' events** (`src/lib/event-visibility.ts`): with `APP_ENV=staging`, event lists, search and org pages only show the curated demo events (`event."isDemoDefault"`, created by `scripts/seed-demo-events.mjs --staging`) plus the viewer's own organizations' events; super admins see everything, and a direct link still opens. Any new query that lists events should AND in `eventVisibilitySql()`. Nothing changes outside staging.
 - **Two DB env vars**: `DATABASE_URL` (your local/dev DB) and `PROD_DATABASE_URL` (production) — migration scripts run against both when both are set in `.env.local`. Be deliberate about which one you're pointed at before running anything destructive.

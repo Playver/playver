@@ -62,6 +62,7 @@ const MIGRATION_SCRIPTS = [
   "migrate-organization-wallet.mjs",
   // Depends on organization wallet columns + wallet_withdrawal.organizationId.
   "migrate-payment-fees.mjs",
+  "migrate-demo-events.mjs",
 ];
 
 // migrate-*.mjs files that intentionally do NOT belong in MIGRATION_SCRIPTS —

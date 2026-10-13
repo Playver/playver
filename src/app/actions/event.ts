@@ -28,6 +28,7 @@ import { calculateFees, netForCollected } from "@/lib/payment-fees";
 import { assertPaidCheckoutSession } from "@/lib/verify-checkout-session";
 import { applyRefundFees, getRefundFeeStatus, notifyAdminsOfRefundFlag } from "@/lib/refund-fees";
 import { auth } from "@/lib/auth";
+import { eventVisibilitySql, getEventViewer } from "@/lib/event-visibility";
 import { pool, withTransaction } from "@/lib/db";
 import { sendEventJoinedEmail, sendNewParticipantEmail, sendEventFullEmail, sendPaymentReceiptEmail, sendEventCancelledEmail, sendEventPostponedEmail } from "@/lib/emails";
 import { resend, FROM, layout, ctaButton, BASE_URL } from "@/lib/emails/_shared";
@@ -323,6 +324,8 @@ export async function createEvent(data: {
 
 export async function getEvents() {
   await ensureEventParticipantsTable();
+  const params: unknown[] = [];
+  const visible = eventVisibilitySql(await getEventViewer(), "e", params);
   const result = await pool.query(
     `SELECT e.*, COALESCE(o.name, u.name) as "organizerName", o.slug as "organizationSlug", o."logoUrl" as "organizationLogo",
        CASE WHEN e."registrationMode" = 'team'
@@ -333,11 +336,13 @@ export async function getEvents() {
      JOIN "user" u ON e."organizerId" = u.id
      LEFT JOIN "organization" o ON o.id = e."organizationId"
      LEFT JOIN "event_participant" ep ON ep."eventId" = e.id
+     WHERE ${visible}
      GROUP BY e.id, u.name, o.name, o.slug, o."logoUrl"
      ORDER BY
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN 0 ELSE 1 END ASC,
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN e."startDateTime" END ASC NULLS LAST,
-       CASE WHEN NOT (e.status = 'active' AND e."endDateTime" >= NOW()) THEN e."startDateTime" END DESC NULLS LAST`
+       CASE WHEN NOT (e.status = 'active' AND e."endDateTime" >= NOW()) THEN e."startDateTime" END DESC NULLS LAST`,
+    params
   );
   return result.rows.map(serializeEvent);
 }
@@ -348,6 +353,8 @@ export async function getEvents() {
 // getEvents(), just pre-filtered server-side instead of over the whole table.
 export async function getEventsByOrganization(organizationId: string) {
   await ensureEventParticipantsTable();
+  const params: unknown[] = [organizationId];
+  const visible = eventVisibilitySql(await getEventViewer(), "e", params);
   const result = await pool.query(
     `SELECT e.*, COALESCE(o.name, u.name) as "organizerName", o.slug as "organizationSlug", o."logoUrl" as "organizationLogo",
        CASE WHEN e."registrationMode" = 'team'
@@ -358,31 +365,34 @@ export async function getEventsByOrganization(organizationId: string) {
      JOIN "user" u ON e."organizerId" = u.id
      LEFT JOIN "organization" o ON o.id = e."organizationId"
      LEFT JOIN "event_participant" ep ON ep."eventId" = e.id
-     WHERE e."organizationId" = $1
+     WHERE e."organizationId" = $1 AND ${visible}
      GROUP BY e.id, u.name, o.name, o.slug, o."logoUrl"
      ORDER BY
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN 0 ELSE 1 END ASC,
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN e."startDateTime" END ASC NULLS LAST,
        CASE WHEN NOT (e.status = 'active' AND e."endDateTime" >= NOW()) THEN e."startDateTime" END DESC NULLS LAST`,
-    [organizationId]
+    params
   );
   return result.rows.map(serializeEvent);
 }
 
 export async function getTournamentEvents() {
   await ensureTournamentTables();
+  const params: unknown[] = [];
+  const visible = eventVisibilitySql(await getEventViewer(), "e", params);
   const result = await pool.query(
     `SELECT e.*, COALESCE(o.name, u.name) as "organizerName", o.slug as "organizationSlug", o."logoUrl" as "organizationLogo", COUNT(tt.id) as "participantCount"
      FROM "event" e
      JOIN "user" u ON e."organizerId" = u.id
      LEFT JOIN "organization" o ON o.id = e."organizationId"
      LEFT JOIN "tournament_team" tt ON tt."tournamentId" = e.id AND tt.status = 'active'
-     WHERE e."registrationMode" = 'team'
+     WHERE e."registrationMode" = 'team' AND ${visible}
      GROUP BY e.id, u.name, o.name, o.slug, o."logoUrl"
      ORDER BY
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN 0 ELSE 1 END ASC,
        CASE WHEN e.status = 'active' AND e."endDateTime" >= NOW() THEN e."startDateTime" END ASC NULLS LAST,
-       CASE WHEN NOT (e.status = 'active' AND e."endDateTime" >= NOW()) THEN e."startDateTime" END DESC NULLS LAST`
+       CASE WHEN NOT (e.status = 'active' AND e."endDateTime" >= NOW()) THEN e."startDateTime" END DESC NULLS LAST`,
+    params
   );
   return result.rows.map(serializeEvent);
 }
@@ -578,6 +588,8 @@ export async function getEventParticipants(eventId: string): Promise<EventPartic
 
 export async function getTeamEvents(teamId: string): Promise<EventItem[]> {
   await ensureEventParticipantsTable();
+  const params: unknown[] = [teamId];
+  const visible = eventVisibilitySql(await getEventViewer(), "e", params);
   const result = await pool.query(
     `SELECT e.*, COALESCE(o.name, u.name) as "organizerName", o.slug as "organizationSlug", o."logoUrl" as "organizationLogo",
        CASE WHEN e."registrationMode" = 'team'
@@ -598,10 +610,10 @@ export async function getTeamEvents(teamId: string): Promise<EventItem[]> {
        SELECT tt."tournamentId"
        FROM "tournament_team" tt
        WHERE tt."linkedTeamId" = $1
-     )
+     ) AND ${visible}
      GROUP BY e.id, u.name, o.name, o.slug, o."logoUrl"
      ORDER BY e."startDateTime" ASC`,
-    [teamId]
+    params
   );
   return result.rows.map(serializeEvent);
 }

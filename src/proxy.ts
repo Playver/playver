@@ -12,6 +12,7 @@
 import createMiddleware from "next-intl/middleware";
 import { NextRequest, NextResponse } from "next/server";
 import { routing } from "./i18n/routing";
+import { stagingAuthOk } from "./lib/staging-auth";
 
 const intlMiddleware = createMiddleware(routing);
 
@@ -23,15 +24,7 @@ function unauthorized() {
 }
 
 export default function middleware(request: NextRequest) {
-  const user = process.env.STAGING_BASIC_AUTH_USER;
-  const pass = process.env.STAGING_BASIC_AUTH_PASSWORD;
-
-  if (process.env.APP_ENV === "staging" && user && pass) {
-    const authHeader = request.headers.get("authorization");
-    const provided = authHeader?.startsWith("Basic ") ? atob(authHeader.slice(6)) : null;
-    if (provided !== `${user}:${pass}`) return unauthorized();
-  }
-
+  if (!stagingAuthOk(request)) return unauthorized();
   return intlMiddleware(request);
 }
 

@@ -7,6 +7,7 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import Image from "next/image";
+import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
 import { auth } from "@/lib/auth";
 import Navbar from "@/components/layout/Navbar";
@@ -14,6 +15,9 @@ import Footer from "@/components/layout/Footer";
 import LoggedInPageShell from "@/components/layout/LoggedInPageShell";
 import ProfileDashboardToggle from "@/components/layout/ProfileDashboardToggle";
 import { getAthleteProfile } from "@/app/actions/athlete";
+import ShareButton from "@/components/share/ShareButton";
+import { shareMetadata } from "@/lib/share-metadata";
+import { getAthleteShareInfo } from "@/lib/share-info";
 import { getUserOrganizations } from "@/app/actions/organization";
 import AthleteGameHistory from "@/components/athletes/AthleteGameHistory";
 import AthleteAvatarEditor from "@/components/athletes/AthleteAvatarEditor";
@@ -109,15 +113,40 @@ function sportRoleColor(role: string): string {
   return map[role] ?? "bg-zinc-100 text-zinc-600";
 }
 
-export default async function AthleteProfilePage({
+export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: Promise<{ userId: string }>;
+  searchParams: Promise<{ media?: string }>;
+}): Promise<Metadata> {
+  const [{ userId }, { media: mediaId }] = await Promise.all([params, searchParams]);
+  const info = await getAthleteShareInfo(userId, mediaId);
+  if (!info) return {};
+  // A shared photo previews as that photo; a shared video uses the profile
+  // picture (preview cards can't show a video frame).
+  const mediaImage = info.media && info.media.type !== "video" ? info.media.url : null;
+  return shareMetadata({
+    title: info.name,
+    description: info.description,
+    image: mediaImage ?? info.image,
+    path: info.media ? `/athletes/${userId}?media=${mediaId}` : `/athletes/${userId}`,
+    type: "profile",
+  });
+}
+
+export default async function AthleteProfilePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ userId: string }>;
+  searchParams: Promise<{ tab?: string; media?: string }>;
 }) {
-  const { userId } = await params;
-  const [profile, t, session] = await Promise.all([
+  const [{ userId }, { tab: tabParam, media: sharedMediaId }] = await Promise.all([params, searchParams]);
+  const [profile, t, tShare, session] = await Promise.all([
     getAthleteProfile(userId),
     getTranslations("AthleteProfile"),
+    getTranslations("Share"),
     auth.api.getSession({ headers: await headers() }),
   ]);
 
@@ -146,6 +175,16 @@ export default async function AthleteProfilePage({
   );
 
   const achievementsContent = <AthleteAchievementsTab isOwnProfile={isOwnProfile} achievements={achievements} />;
+  const mediaContent = (
+    <AthleteGallerySection
+      isOwnProfile={isOwnProfile}
+      initialMedia={media}
+      ownerId={userId}
+      ownerName={user.name}
+      openMediaId={sharedMediaId ?? null}
+    />
+  );
+  const initialTab = sharedMediaId || tabParam === "media" ? "media" : tabParam === "achievements" ? "achievements" : "about";
 
   const body = (
     <div className="bg-zinc-50 min-h-full">
@@ -171,8 +210,15 @@ export default async function AthleteProfilePage({
           <div className="-mt-14">
             <AthleteAvatarEditor isOwnProfile={isOwnProfile} name={user.name} bio={user.bio} mainSport={user.mainSport} image={user.image} />
           </div>
-          {isOwnProfile && (
-            <div className="pt-4">
+          <div className="pt-4 flex items-center gap-2">
+            <ShareButton
+              path={`/athletes/${userId}`}
+              title={user.name}
+              text={tShare("profileText", { name: user.name })}
+              label={tShare("shareProfile")}
+              variant={isOwnProfile ? "icon" : "button"}
+            />
+            {isOwnProfile && (
               <AthleteEditProfileButton
                 name={user.name}
                 bio={user.bio}
@@ -186,8 +232,8 @@ export default async function AthleteProfilePage({
                 interests={user.interests}
                 dateOfBirth={user.dateOfBirth}
               />
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         <div className="mb-4">
@@ -264,15 +310,17 @@ export default async function AthleteProfilePage({
 
       <div className="px-4 md:px-8 py-8">
 
-      {/* About / Achievements tabs */}
-      <AthleteProfileTabs aboutContent={aboutContent} achievementsContent={achievementsContent} />
+      {/* About / Media / Achievements tabs */}
+      <AthleteProfileTabs
+        aboutContent={aboutContent}
+        mediaContent={mediaContent}
+        achievementsContent={achievementsContent}
+        initialTab={initialTab}
+      />
 
       {/* Game History */}
-      <AthleteGameHistory games={games} />
-
-      {/* Gameplay Gallery */}
-      <div className="mb-6">
-        <AthleteGallerySection isOwnProfile={isOwnProfile} initialMedia={media} />
+      <div className="mt-10">
+        <AthleteGameHistory games={games} />
       </div>
 
       </div>

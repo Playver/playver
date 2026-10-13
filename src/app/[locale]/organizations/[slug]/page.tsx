@@ -16,12 +16,16 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import Image from "next/image";
+import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
 import { auth } from "@/lib/auth";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import LoggedInPageShell from "@/components/layout/LoggedInPageShell";
 import PublicAdminToggle from "@/components/organizer/PublicAdminToggle";
+import ShareButton from "@/components/share/ShareButton";
+import { shareMetadata } from "@/lib/share-metadata";
+import { getOrganizationShareInfo } from "@/lib/share-info";
 import OrganizationCoverEditor from "@/components/organizations/OrganizationCoverEditor";
 import { hasPermission } from "@/lib/organizer-permissions";
 import { getPublicOrganizationProfile, getUserOrganizations } from "@/app/actions/organization";
@@ -188,6 +192,13 @@ function PartnersGrid({
   );
 }
 
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const info = await getOrganizationShareInfo(slug);
+  if (!info) return {};
+  return shareMetadata({ title: info.name, description: info.description, image: info.image, path: `/organizations/${slug}` });
+}
+
 export default async function OrganizationPublicProfilePage({
   params,
 }: {
@@ -204,13 +215,14 @@ export default async function OrganizationPublicProfilePage({
   // the org actually turned it on.
   const partnersEnabled = profile.enabledModules.includes("partners");
 
-  const [events, teams, partners, t, tDiscover, tOrganizer, session] = await Promise.all([
+  const [events, teams, partners, t, tDiscover, tOrganizer, tShare, session] = await Promise.all([
     getEventsByOrganization(profile.id),
     getPublicOrganizationTeams(profile.id),
     partnersEnabled ? getPublicOrganizationPartners(profile.id) : Promise.resolve<PartnerRow[]>([]),
     getTranslations("OrganizationPublicProfile"),
     getTranslations("Discover"),
     getTranslations("Organizer"),
+    getTranslations("Share"),
     auth.api.getSession({ headers: await headers() }),
   ]);
   const viewerOrganizations = session ? await getUserOrganizations() : [];
@@ -436,6 +448,14 @@ export default async function OrganizationPublicProfilePage({
             </h1>
             {profile.slogan && <p className="text-sm font-semibold text-zinc-600 mt-0.5">{profile.slogan}</p>}
           </div>
+          <ShareButton
+            path={`/organizations/${profile.slug}`}
+            title={profile.name}
+            text={tShare("organizationText", { name: profile.name })}
+            label={tShare("shareOrganization")}
+            variant="icon"
+            className="shrink-0"
+          />
           {profile.publicEmail && (
             <a
               href={`mailto:${profile.publicEmail}`}

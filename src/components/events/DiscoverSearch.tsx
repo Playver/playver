@@ -4,11 +4,14 @@
 // via linkTo="tournaments") list — all filtering happens in-browser over
 // the full `events` array passed in, no server round-trip per keystroke.
 // Also tracks "recently viewed" event IDs in localStorage (RECENT_KEY).
+// The search box also looks up athletes and organizations (server-side,
+// PeopleAndOrgsResults), shown above the event results.
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import EventCard from "@/components/events/EventCard";
 import EventListRow from "@/components/events/EventListRow";
 import type { EventItem } from "@/app/actions/event";
+import PeopleAndOrgsResults from "@/components/search/PeopleAndOrgsResults";
 
 type EventType = "all" | "league" | "tournament" | "activity";
 type Sport =
@@ -314,6 +317,8 @@ export default function DiscoverSearch({
           </div>
         )}
       </form>
+
+      {showSearchBar && <PeopleAndOrgsResults query={search} />}
 
       {/* Recently Viewed — commented out for now
       {recentlyViewed.length > 0 && (

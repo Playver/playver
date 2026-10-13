@@ -5,6 +5,7 @@
 // client-side with no per-tab fetch.
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
@@ -17,7 +18,10 @@ import EventCancelPostponeButton from "@/components/events/EventCancelPostponeBu
 import AdminAddParticipant from "@/components/events/AdminAddParticipant";
 import { Link } from "@/i18n/routing";
 import BackButton from "@/components/layout/BackButton";
+import ShareButton from "@/components/share/ShareButton";
+import { shareMetadata } from "@/lib/share-metadata";
 import { auth } from "@/lib/auth";
+import { canViewEvent, getEventViewer } from "@/lib/event-visibility";
 import { getEventById, getEventParticipants, getEventParticipationMap, getEventFormFields, getEventCategories, getEventPricingTiers } from "@/app/actions/event";
 import { getUserOrganizations } from "@/app/actions/organization";
 import { canManageOrgEvent } from "@/app/actions/organizer-events";
@@ -47,6 +51,19 @@ function isMobileUserAgent(userAgent: string) {
   return /Mobi|Android|iPhone|iPad|iPod/i.test(userAgent);
 }
 
+export async function generateMetadata({ params }: { params: Promise<{ eventId: string }> }): Promise<Metadata> {
+  const { eventId } = await params;
+  const event = await getEventById(eventId);
+  if (!event || !(await canViewEvent(await getEventViewer(), event))) return {};
+  const when = new Date(event.startDateTime).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" });
+  return shareMetadata({
+    title: event.title,
+    description: [when, event.location, event.organizerName].filter(Boolean).join(" · ") + (event.description ? ` — ${event.description}` : ""),
+    image: event.coverImageUrl,
+    path: `/events/${event.id}`,
+  });
+}
+
 export default async function EventDetailsPage({
   params,
   searchParams,
@@ -55,9 +72,10 @@ export default async function EventDetailsPage({
   searchParams: Promise<{ payment?: string; session_id?: string }>;
 }) {
   const requestHeaders = await headers();
-  const [{ eventId }, t, session, { payment, session_id: stripeSessionId }] = await Promise.all([
+  const [{ eventId }, t, tShare, session, { payment, session_id: stripeSessionId }] = await Promise.all([
     params,
     getTranslations("EventDetails"),
+    getTranslations("Share"),
     auth.api.getSession({ headers: requestHeaders }),
     searchParams,
   ]);
@@ -85,7 +103,7 @@ export default async function EventDetailsPage({
   }
 
   const event = await getEventById(eventId);
-  if (!event) notFound();
+  if (!event || !(await canViewEvent(await getEventViewer(), event))) notFound();
 
   // Two independent axes replacing the old single isTournament check (which
   // was really "team registration" and "has a games schedule" conflated into
@@ -170,6 +188,13 @@ export default async function EventDetailsPage({
               <div className="absolute left-6 top-6 rounded-full bg-white px-5 py-2 text-xs font-extrabold uppercase tracking-wide text-[#c32722] shadow-sm">
                 {event.sport}
               </div>
+              <ShareButton
+                path={`/events/${event.id}`}
+                title={event.title}
+                text={tShare("eventText", { title: event.title })}
+                label={tShare("shareEvent")}
+                className="absolute right-6 top-6"
+              />
               {event.status === "cancelled" ? (
                 <div className="absolute bottom-6 right-6 rounded-full border-2 border-red-300 bg-[#e21d12] px-4 py-2 text-xs font-extrabold uppercase tracking-wide text-white shadow-md">
                   {t("eventCancelled")}

@@ -6,6 +6,7 @@
 import { headers } from "next/headers";
 import Image from "next/image";
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
@@ -13,6 +14,9 @@ import LeaveTeamButton from "@/components/teams/LeaveTeamButton";
 import RemoveTeamMemberButton from "@/components/teams/RemoveTeamMemberButton";
 import { JoinOpenTeamButton, TournamentCaptainPanel } from "@/components/tournaments/TournamentCaptainPanel";
 import BackButton from "@/components/layout/BackButton";
+import ShareButton from "@/components/share/ShareButton";
+import { shareMetadata } from "@/lib/share-metadata";
+import { getTeamShareInfo } from "@/lib/share-info";
 import MobileSectionNav from "@/components/layout/MobileSectionNav";
 import { Link } from "@/i18n/routing";
 import { auth } from "@/lib/auth";
@@ -85,14 +89,22 @@ function MetricCard({ label, value, className }: { label: string; value: string;
   );
 }
 
+export async function generateMetadata({ params }: { params: Promise<{ teamId: string }> }): Promise<Metadata> {
+  const { teamId } = await params;
+  const info = await getTeamShareInfo(teamId);
+  if (!info) return {};
+  return shareMetadata({ title: info.name, description: info.description, image: info.image, path: `/teams/${teamId}` });
+}
+
 export default async function TeamDetailsPage({
   params,
 }: {
   params: Promise<{ teamId: string }>;
 }) {
-  const [{ teamId }, t, session] = await Promise.all([
+  const [{ teamId }, t, tShare, session] = await Promise.all([
     params,
     getTranslations("TeamDetails"),
+    getTranslations("Share"),
     auth.api.getSession({ headers: await headers() }),
   ]);
 
@@ -140,6 +152,14 @@ export default async function TeamDetailsPage({
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(226,29,18,0.18),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(226,29,18,0.12),transparent_35%)]" />
                 </>
               )}
+              <ShareButton
+                path={`/teams/${team.id}`}
+                title={team.name}
+                text={tShare("teamText", { name: team.name })}
+                label={tShare("shareTeam")}
+                variant="icon"
+                className="absolute right-4 top-4 z-20"
+              />
               <div className="relative z-10 flex flex-col items-center text-center max-w-full px-2">
                 {team.logoUrl ? (
                   <Image src={team.logoUrl} alt={team.name} width={112} height={112} className="size-20 sm:size-28 rounded-full border-4 border-white object-cover shadow-md" />
