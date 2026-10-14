@@ -22,18 +22,27 @@ export async function getAthleteShareInfo(userId: string, mediaId?: string) {
   };
 }
 
-export async function getOrganizationShareInfo(slug: string) {
+export async function getOrganizationShareInfo(slug: string, mediaId?: string) {
   const res = await pool.query(
-    `SELECT name, "logoUrl", "coverImageUrl", "shortDescription", slogan, city
+    `SELECT id, name, "logoUrl", "coverImageUrl", "shortDescription", slogan, city
      FROM "organization" WHERE slug = $1 AND "publicationStatus" = 'published'`,
     [slug]
   );
   const org = res.rows[0];
   if (!org) return null;
+  // organization_media self-creates on first use (organization-media.ts), so
+  // it may not exist yet — a missing table just means no media preview.
+  const mediaRes = mediaId
+    ? await pool
+        .query(`SELECT url, type FROM "organization_media" WHERE id = $1 AND "organizationId" = $2`, [mediaId, org.id])
+        .catch(() => null)
+    : null;
+  const media = mediaRes?.rows[0] as { url: string; type: string } | undefined;
   return {
     name: org.name as string,
     image: (org.coverImageUrl || org.logoUrl || null) as string | null,
     description: (org.shortDescription || org.slogan || org.city || null) as string | null,
+    media: media ?? null,
   };
 }
 

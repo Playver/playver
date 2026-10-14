@@ -1482,6 +1482,7 @@
   "OrganizationPublicProfile": {
     "tabHome": "Accueil",
     "tabAbout": "À propos",
+    "tabMedia": "Médias",
     "tabExplore": "Explorer",
     "contactButton": "Contact",
     "editCoverButton": "Modifier la couverture",

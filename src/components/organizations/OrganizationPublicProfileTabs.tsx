@@ -1,24 +1,31 @@
 "use client";
 
-// Home/About/Explore tabs for the public organization profile page
+// Home/About/Media/Explore tabs for the public organization profile page
 // (/organizations/[slug]). Same client-side tab-state pattern as
 // AthleteProfileTabs (src/components/athletes/AthleteProfileTabs.tsx) — all
-// three tabs' content are rendered server-side and passed in as ReactNode,
-// so switching tabs never triggers a refetch.
+// tabs' content are rendered server-side and passed in as ReactNode, so
+// switching tabs never triggers a refetch. initialTab comes from the URL
+// (?tab=media, or a shared ?media=<id> link).
 import { useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
+
+export type OrganizationProfileTab = "home" | "about" | "media" | "explore";
 
 export default function OrganizationPublicProfileTabs({
   homeContent,
   aboutContent,
+  mediaContent,
   exploreContent,
+  initialTab = "home",
 }: {
   homeContent: ReactNode;
   aboutContent: ReactNode;
+  mediaContent: ReactNode;
   exploreContent: ReactNode;
+  initialTab?: OrganizationProfileTab;
 }) {
   const t = useTranslations("OrganizationPublicProfile");
-  const [tab, setTab] = useState<"home" | "about" | "explore">("home");
+  const [tab, setTab] = useState<OrganizationProfileTab>(initialTab);
 
   return (
     <div>
@@ -29,12 +36,16 @@ export default function OrganizationPublicProfileTabs({
         <TabButton active={tab === "about"} onClick={() => setTab("about")}>
           {t("tabAbout")}
         </TabButton>
+        <TabButton active={tab === "media"} onClick={() => setTab("media")}>
+          {t("tabMedia")}
+        </TabButton>
         <TabButton active={tab === "explore"} onClick={() => setTab("explore")}>
           {t("tabExplore")}
         </TabButton>
       </div>
       <div className={tab === "home" ? "flex flex-col gap-6" : "hidden"}>{homeContent}</div>
       <div className={tab === "about" ? "flex flex-col gap-6" : "hidden"}>{aboutContent}</div>
+      <div className={tab === "media" ? "" : "hidden"}>{mediaContent}</div>
       <div className={tab === "explore" ? "" : "hidden"}>{exploreContent}</div>
     </div>
   );

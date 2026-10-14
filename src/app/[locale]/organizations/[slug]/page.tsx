@@ -37,6 +37,8 @@ import EventCard from "@/components/events/EventCard";
 import DiscoverSearch from "@/components/events/DiscoverSearch";
 import OrganizationPublicProfileTabs from "@/components/organizations/OrganizationPublicProfileTabs";
 import OrganizationExploreSubTabs from "@/components/organizations/OrganizationExploreSubTabs";
+import OrganizationMediaSection from "@/components/organizations/OrganizationMediaSection";
+import { getOrganizationMedia } from "@/app/actions/organization-media";
 
 // Mirrors Step1Profile.tsx's ORG_TYPES keys — used to guard which
 // organizationType values have a translated label (Organizer.wizardType_*)
@@ -192,19 +194,35 @@ function PartnersGrid({
   );
 }
 
-export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
-  const { slug } = await params;
-  const info = await getOrganizationShareInfo(slug);
+export async function generateMetadata({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ media?: string }>;
+}): Promise<Metadata> {
+  const [{ slug }, { media: mediaId }] = await Promise.all([params, searchParams]);
+  const info = await getOrganizationShareInfo(slug, mediaId);
   if (!info) return {};
-  return shareMetadata({ title: info.name, description: info.description, image: info.image, path: `/organizations/${slug}` });
+  // Same as athlete profiles: a shared photo previews as that photo; a
+  // shared video falls back to the org's cover/logo.
+  const mediaImage = info.media && info.media.type !== "video" ? info.media.url : null;
+  return shareMetadata({
+    title: info.name,
+    description: info.description,
+    image: mediaImage ?? info.image,
+    path: mediaId && info.media ? `/organizations/${slug}?media=${mediaId}` : `/organizations/${slug}`,
+  });
 }
 
 export default async function OrganizationPublicProfilePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ tab?: string; media?: string }>;
 }) {
-  const { slug } = await params;
+  const [{ slug }, { tab: tabParam, media: sharedMediaId }] = await Promise.all([params, searchParams]);
   const profile = await getPublicOrganizationProfile(slug);
   if (!profile) notFound();
 
@@ -215,10 +233,11 @@ export default async function OrganizationPublicProfilePage({
   // the org actually turned it on.
   const partnersEnabled = profile.enabledModules.includes("partners");
 
-  const [events, teams, partners, t, tDiscover, tOrganizer, tShare, session] = await Promise.all([
+  const [events, teams, partners, media, t, tDiscover, tOrganizer, tShare, session] = await Promise.all([
     getEventsByOrganization(profile.id),
     getPublicOrganizationTeams(profile.id),
     partnersEnabled ? getPublicOrganizationPartners(profile.id) : Promise.resolve<PartnerRow[]>([]),
+    getOrganizationMedia(profile.id),
     getTranslations("OrganizationPublicProfile"),
     getTranslations("Discover"),
     getTranslations("Organizer"),
@@ -233,11 +252,11 @@ export default async function OrganizationPublicProfilePage({
   // PublicAdminToggle's own comment for the full Public<->Admin story).
   const viewerMembership = viewerOrganizations.find((org) => org.id === profile.id);
   const viewerIsOrgMember = Boolean(viewerMembership);
-  // The "Edit Cover" button only shows for a role that can actually save
+  // The "Edit Cover" button and Media upload/delete only show for a role that can actually save
   // the change — updateOrganizationDraft() enforces this same permission
   // server-side regardless, but showing the button to e.g. a STAFF/
   // READ_ONLY member would just be a button that silently fails.
-  const canEditCover = Boolean(viewerMembership && hasPermission(viewerMembership.role, "MANAGE_ORGANIZATION_PROFILE"));
+  const canEditProfile = Boolean(viewerMembership && hasPermission(viewerMembership.role, "MANAGE_ORGANIZATION_PROFILE"));
 
   const now = new Date();
   const upcomingEvents = events.filter((e) => e.status === "active" && new Date(e.startDateTime) >= now);
@@ -400,6 +419,23 @@ export default async function OrganizationPublicProfilePage({
     </>
   );
 
+  const mediaContent = (
+    <OrganizationMediaSection
+      organizationId={profile.id}
+      slug={profile.slug}
+      name={profile.name}
+      canEdit={canEditProfile}
+      initialMedia={media}
+      openMediaId={sharedMediaId ?? null}
+    />
+  );
+  const initialTab =
+    sharedMediaId || tabParam === "media"
+      ? "media"
+      : tabParam === "about" || tabParam === "explore"
+        ? tabParam
+        : "home";
+
   const exploreEventsContent = (
     <DiscoverSearch events={events} currentUserId={null} joinedEventIds={[]} sectionTitle={profile.name} />
   );
@@ -425,7 +461,7 @@ export default async function OrganizationPublicProfilePage({
         ) : (
           <div className="h-full w-full bg-gradient-to-br from-zinc-100 to-zinc-200" />
         )}
-        {canEditCover && <OrganizationCoverEditor />}
+        {canEditProfile && <OrganizationCoverEditor />}
       </div>
 
       <div className="bg-white border-b border-zinc-200 px-4 md:px-8 pb-8">
@@ -500,7 +536,13 @@ export default async function OrganizationPublicProfilePage({
       </div>
 
       <div className="px-4 md:px-8 py-8">
-        <OrganizationPublicProfileTabs homeContent={homeContent} aboutContent={aboutContent} exploreContent={exploreContent} />
+        <OrganizationPublicProfileTabs
+          homeContent={homeContent}
+          aboutContent={aboutContent}
+          mediaContent={mediaContent}
+          exploreContent={exploreContent}
+          initialTab={initialTab}
+        />
       </div>
     </div>
   );

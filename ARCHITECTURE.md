@@ -151,6 +151,7 @@ Vitest (`npm test`), no config file (running on defaults). Coverage today is **n
 | Stripe webhook handling | `src/app/api/stripe/webhook/route.ts` |
 | Site-wide search (athletes, orgs, events) | `src/lib/search.ts`, `src/app/api/search/route.ts`, `src/components/search/`, `src/app/[locale]/search/` |
 | Share buttons + link previews | `src/components/share/ShareButton.tsx`, `src/lib/share-metadata.ts`, `src/lib/share-info.ts` |
+| Profile Media tab (athletes + orgs) | `src/components/media/MediaGallery.tsx` (shared UI), `user_media` via `src/app/actions/athlete.ts`, `organization_media` via `src/app/actions/organization-media.ts` (self-creating table) |
 
 ## 12. Known quirks, in one place
 
