@@ -22,7 +22,7 @@ export default async function TeamsPage() {
 
   return (
     <>
-      <Navbar hideTournaments />
+      <Navbar />
       <main className="flex-1 bg-white">
         <div className="max-w-7xl mx-auto px-4 md:px-8 py-20">
           <div className="flex items-start justify-between gap-4 mb-4">

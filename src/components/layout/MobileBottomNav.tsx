@@ -17,14 +17,6 @@ const ICON_PROPS = {
   strokeLinejoin: "round" as const,
 };
 
-function IconTournaments() {
-  return (
-    <svg {...ICON_PROPS}>
-      <path d="M7 4h10v5a5 5 0 0 1-10 0V4z" /><path d="M17 5h2a2 2 0 0 1 2 2 4 4 0 0 1-4 4" /><path d="M7 5H5a2 2 0 0 0-2 2 4 4 0 0 0 4 4" /><path d="M8 21h8" /><path d="M12 17v4" />
-    </svg>
-  );
-}
-
 function IconEvents() {
   return (
     <svg {...ICON_PROPS}>
@@ -53,7 +45,7 @@ function hasOwnMobileNav(pathname: string) {
   return false;
 }
 
-export default function MobileBottomNav({ hideTournaments = false }: { hideTournaments?: boolean } = {}) {
+export default function MobileBottomNav() {
   const t = useTranslations("Navbar");
   const pathname = usePathname();
   const { data: session } = useSession();
@@ -61,7 +53,6 @@ export default function MobileBottomNav({ hideTournaments = false }: { hideTourn
   if (hasOwnMobileNav(pathname)) return null;
 
   const items = [
-    ...(session && !hideTournaments ? [{ href: "/tournaments" as const, label: t("tournaments"), icon: <IconTournaments /> }] : []),
     { href: "/events" as const, label: t("discover"), icon: <IconEvents /> },
     session
       ? { href: "/dashboard/profile" as const, label: t("profile"), icon: <IconProfile /> }

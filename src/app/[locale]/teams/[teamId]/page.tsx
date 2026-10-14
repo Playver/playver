@@ -133,7 +133,7 @@ export default async function TeamDetailsPage({
 
   return (
     <>
-      <Navbar hideTournaments />
+      <Navbar />
       <main className="flex-1 bg-white">
         <div className="mx-auto max-w-6xl px-4 py-8 md:px-8 overflow-x-hidden">
           <BackButton label={t("back")} fallbackHref="/teams" />
