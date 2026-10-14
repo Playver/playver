@@ -134,7 +134,7 @@ export default function MediaGallery({
               type="button"
               onClick={() => mediaInputRef.current?.click()}
               disabled={mediaUploading}
-              className="aspect-video rounded-xl border-2 border-dashed border-zinc-200 flex flex-col items-center justify-center gap-1.5 cursor-pointer hover:border-zinc-400 transition-colors text-zinc-400 disabled:opacity-50"
+              className="aspect-square rounded-xl border-2 border-dashed border-zinc-200 flex flex-col items-center justify-center gap-1.5 cursor-pointer hover:border-zinc-400 transition-colors text-zinc-400 disabled:opacity-50"
             >
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -184,7 +184,7 @@ function MediaTile({
   }
 
   return (
-    <div className={`relative group aspect-video rounded-xl overflow-hidden bg-zinc-100 transition-opacity ${deleting ? "opacity-40" : ""}`}>
+    <div className={`relative group aspect-square rounded-xl overflow-hidden bg-zinc-100 transition-opacity ${deleting ? "opacity-40" : ""}`}>
       <button type="button" onClick={onOpen} className="absolute inset-0 w-full h-full" aria-label={tShare("openMedia")}>
         <MediaPreview item={item} />
       </button>
@@ -209,15 +209,21 @@ function MediaTile({
   );
 }
 
-// Grid thumbnail. Items saved before uploads recorded their real type may
-// be videos marked "image" (UploadThing URLs have no extension), so a
-// thumbnail that fails to load as an image falls back to a video element.
+// Grid thumbnail. The whole photo/video is always visible (object-contain,
+// so tall photos and logos aren't cropped) over a blurred copy of itself
+// that fills the rest of the square tile. Items saved before uploads
+// recorded their real type may be videos marked "image" (UploadThing URLs
+// have no extension), so a thumbnail that fails to load as an image falls
+// back to a video element.
 function MediaPreview({ item }: { item: UserMediaItem }) {
   const [asVideo, setAsVideo] = useState(isVideo(item));
   if (asVideo) {
+    // "#t=0.1" makes iOS Safari paint the first frame instead of a blank box.
+    const src = `${item.url}#t=0.1`;
     return (
       <>
-        <video src={item.url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+        <video src={src} aria-hidden className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl opacity-60" muted playsInline preload="metadata" />
+        <video src={src} className="relative w-full h-full object-contain" muted playsInline preload="metadata" />
         <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <span className="size-10 rounded-full bg-black/50 flex items-center justify-center">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -226,7 +232,12 @@ function MediaPreview({ item }: { item: UserMediaItem }) {
       </>
     );
   }
-  return <Image src={item.url} alt="" fill className="object-cover" sizes="(max-width: 640px) 50vw, 33vw" onError={() => setAsVideo(true)} />;
+  return (
+    <>
+      <Image src={item.url} alt="" aria-hidden fill className="object-cover scale-110 blur-xl opacity-60" sizes="(max-width: 640px) 50vw, 33vw" />
+      <Image src={item.url} alt="" fill className="object-contain" sizes="(max-width: 640px) 50vw, 33vw" onError={() => setAsVideo(true)} />
+    </>
+  );
 }
 
 function MediaViewer({
