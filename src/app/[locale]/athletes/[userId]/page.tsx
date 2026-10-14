@@ -171,6 +171,7 @@ export default async function AthleteProfilePage({
         socialLinks={user.socialLinks}
         interests={user.interests}
       />
+      <AthleteGameHistory games={games} />
     </>
   );
 
@@ -310,18 +311,13 @@ export default async function AthleteProfilePage({
 
       <div className="px-4 md:px-8 py-8">
 
-      {/* About / Media / Achievements tabs */}
+      {/* About / Media / Achievements tabs — Game History lives in About */}
       <AthleteProfileTabs
         aboutContent={aboutContent}
         mediaContent={mediaContent}
         achievementsContent={achievementsContent}
         initialTab={initialTab}
       />
-
-      {/* Game History */}
-      <div className="mt-10">
-        <AthleteGameHistory games={games} />
-      </div>
 
       </div>
     </div>
