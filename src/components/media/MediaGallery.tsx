@@ -185,7 +185,7 @@ function MediaTile({
 
   return (
     <div className={`relative group aspect-video rounded-xl overflow-hidden bg-zinc-100 transition-opacity ${deleting ? "opacity-40" : ""}`}>
-      <button type="button" onClick={onOpen} className="absolute inset-0 w-full h-full" aria-label={tShare("shareMedia")}>
+      <button type="button" onClick={onOpen} className="absolute inset-0 w-full h-full" aria-label={tShare("openMedia")}>
         <MediaPreview item={item} />
       </button>
       <ShareButton

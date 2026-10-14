@@ -5,7 +5,8 @@
 // small menu offers Copy link, WhatsApp, Facebook, X, LinkedIn and Email.
 // `path` is locale-less (e.g. "/events/abc") so whoever opens the link gets
 // their own language via the locale redirect.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { useTranslations } from "next-intl";
 
 type Variant = "button" | "icon" | "overlay";
@@ -43,21 +44,51 @@ export default function ShareButton({
   const t = useTranslations("Share");
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // The menu is portalled to <body> with fixed positioning so it's never
+  // clipped by an overflow-hidden parent (e.g. a media tile). It opens
+  // towards whichever side of the screen has room.
+  function placeMenu() {
+    const rect = ref.current?.getBoundingClientRect();
+    if (!rect) return;
+    const MENU_WIDTH = 224;
+    const MENU_HEIGHT = 300;
+    const style: CSSProperties = { position: "fixed", width: MENU_WIDTH };
+    if (rect.left + MENU_WIDTH <= window.innerWidth - 8) style.left = Math.max(8, rect.left);
+    else style.right = Math.max(8, window.innerWidth - rect.right);
+    if (rect.bottom + 8 + MENU_HEIGHT <= window.innerHeight || rect.top < MENU_HEIGHT) style.top = rect.bottom + 8;
+    else style.bottom = window.innerHeight - rect.top + 8;
+    setMenuStyle(style);
+  }
 
   useEffect(() => {
     if (!open) return;
     function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (ref.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        // Don't let Escape also close a surrounding viewer/dialog.
+        e.stopImmediatePropagation();
+        setOpen(false);
+      }
     }
     document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    // Follow the button when the page scrolls or resizes (including the
+    // mobile browser bar collapsing) instead of closing.
+    window.addEventListener("resize", placeMenu);
+    window.addEventListener("scroll", placeMenu, true);
     return () => {
       document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("resize", placeMenu);
+      window.removeEventListener("scroll", placeMenu, true);
     };
   }, [open]);
 
@@ -78,6 +109,7 @@ export default function ShareButton({
         if ((err as Error).name === "AbortError") return;
       }
     }
+    if (!open) placeMenu();
     setOpen((o) => !o);
   }
 
@@ -114,9 +146,7 @@ export default function ShareButton({
         : "inline-flex items-center gap-2 px-4 py-2 rounded-full border border-zinc-200 bg-white text-sm font-semibold text-zinc-800 hover:bg-zinc-50";
 
   return (
-    // The menu is positioned against this wrapper, so it needs a positioning
-    // context — unless the caller already placed it with absolute/fixed.
-    <div ref={ref} className={`${/\b(absolute|fixed)\b/.test(className) ? "" : "relative "}inline-flex ${className}`}>
+    <div ref={ref} className={`inline-flex ${className}`}>
       <button
         type="button"
         onClick={onClick}
@@ -129,8 +159,14 @@ export default function ShareButton({
         <ShareIcon />
         {variant === "button" && <span>{t("share")}</span>}
       </button>
-      {open && (
-        <div role="menu" className="absolute right-0 top-full mt-2 z-50 w-56 rounded-xl border border-zinc-200 bg-white shadow-xl py-1.5 text-left">
+      {open && createPortal(
+        <div
+          ref={menuRef}
+          role="menu"
+          style={menuStyle}
+          onClick={(e) => e.stopPropagation()}
+          className="z-[100] rounded-xl border border-zinc-200 bg-white shadow-xl py-1.5 text-left"
+        >
           <button type="button" role="menuitem" onClick={copy} className="w-full text-left px-4 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50">
             {copied ? t("copied") : t("copyLink")}
           </button>
@@ -148,7 +184,8 @@ export default function ShareButton({
               {target.label}
             </a>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
