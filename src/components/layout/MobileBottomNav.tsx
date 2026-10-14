@@ -53,7 +53,7 @@ function hasOwnMobileNav(pathname: string) {
   return false;
 }
 
-export default function MobileBottomNav() {
+export default function MobileBottomNav({ hideTournaments = false }: { hideTournaments?: boolean } = {}) {
   const t = useTranslations("Navbar");
   const pathname = usePathname();
   const { data: session } = useSession();
@@ -61,7 +61,7 @@ export default function MobileBottomNav() {
   if (hasOwnMobileNav(pathname)) return null;
 
   const items = [
-    ...(session ? [{ href: "/tournaments" as const, label: t("tournaments"), icon: <IconTournaments /> }] : []),
+    ...(session && !hideTournaments ? [{ href: "/tournaments" as const, label: t("tournaments"), icon: <IconTournaments /> }] : []),
     { href: "/events" as const, label: t("discover"), icon: <IconEvents /> },
     session
       ? { href: "/dashboard/profile" as const, label: t("profile"), icon: <IconProfile /> }

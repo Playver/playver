@@ -8,10 +8,11 @@ import LanguageToggle from "@/components/layout/LanguageToggle";
 import MobileBottomNav from "@/components/layout/MobileBottomNav";
 import SearchButton from "@/components/search/SearchButton";
 // Site-wide top nav, rendered on nearly every page. Renders MobileBottomNav
-// for small screens.
+// for small screens. hideTournaments drops the Tournaments link (team pages
+// don't show it).
 import { useSession, signOut } from "@/lib/auth-client";
 
-export default function Navbar() {
+export default function Navbar({ hideTournaments = false }: { hideTournaments?: boolean } = {}) {
   const t = useTranslations("Navbar");
   const pathname = usePathname();
   const { data: session } = useSession();
@@ -52,7 +53,7 @@ export default function Navbar() {
   }, []);
 
   const navLinks = [
-    ...(isLoggedIn ? [{ href: "/tournaments" as const, label: t("tournaments") }] : []),
+    ...(isLoggedIn && !hideTournaments ? [{ href: "/tournaments" as const, label: t("tournaments") }] : []),
     { href: "/events" as const, label: t("discover") },
   ];
 
@@ -182,7 +183,7 @@ export default function Navbar() {
         </div>
       )}
     </header>
-    <MobileBottomNav />
+    <MobileBottomNav hideTournaments={hideTournaments} />
     </>
   );
 }
