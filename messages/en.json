@@ -1184,6 +1184,7 @@
     "wizardIdentitySubtitle": "Tell the world who you are. These details appear on your public HQ.",
     "wizardOrgNameLabel": "Organization Name",
     "wizardOrgNamePlaceholder": "e.g. Élite Sports Academy",
+    "renameOrganization": "Rename organization",
     "wizardCityLabel": "City",
     "wizardCityPlaceholder": "Montréal",
     "wizardProvinceLabel": "Province / State",

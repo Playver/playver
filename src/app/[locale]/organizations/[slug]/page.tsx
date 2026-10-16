@@ -27,6 +27,8 @@ import ShareButton from "@/components/share/ShareButton";
 import { shareMetadata } from "@/lib/share-metadata";
 import { getOrganizationShareInfo } from "@/lib/share-info";
 import OrganizationCoverEditor from "@/components/organizations/OrganizationCoverEditor";
+import OrganizationNameEditor from "@/components/organizations/OrganizationNameEditor";
+import { getUserRole } from "@/app/actions/admin";
 import { hasPermission } from "@/lib/organizer-permissions";
 import { getPublicOrganizationProfile, getUserOrganizations } from "@/app/actions/organization";
 import { getEventsByOrganization } from "@/app/actions/event";
@@ -244,7 +246,9 @@ export default async function OrganizationPublicProfilePage({
     getTranslations("Share"),
     auth.api.getSession({ headers: await headers() }),
   ]);
-  const viewerOrganizations = session ? await getUserOrganizations() : [];
+  const [viewerOrganizations, viewerSiteRole] = session
+    ? await Promise.all([getUserOrganizations(), getUserRole(session.user.id)])
+    : [[], null];
   const viewerHasOrganization = viewerOrganizations.some((org) => org.publicationStatus === "published");
   // Only a viewer who's actually a member of THIS org gets the Public/Admin
   // toggle here — otherwise clicking "Public" from the organizer console
@@ -479,9 +483,11 @@ export default async function OrganizationPublicProfilePage({
         </div>
         <div className="mb-4 flex items-start gap-5">
           <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-extrabold text-zinc-900" style={{ fontFamily: "var(--font-playfair)" }}>
-              {profile.name}
-            </h1>
+            <OrganizationNameEditor
+              organizationId={profile.id}
+              name={profile.name}
+              canEdit={canEditProfile || viewerSiteRole === "super_admin"}
+            />
             {profile.slogan && <p className="text-sm font-semibold text-zinc-600 mt-0.5">{profile.slogan}</p>}
           </div>
           <ShareButton

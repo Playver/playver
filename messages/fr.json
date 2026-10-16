@@ -1184,6 +1184,7 @@
     "wizardIdentitySubtitle": "Dites au monde qui vous êtes. Ces détails apparaissent sur votre QG public.",
     "wizardOrgNameLabel": "Nom de l'organisation",
     "wizardOrgNamePlaceholder": "ex. Académie sportive Élite",
+    "renameOrganization": "Renommer l'organisation",
     "wizardCityLabel": "Ville",
     "wizardCityPlaceholder": "Montréal",
     "wizardProvinceLabel": "Province / État",

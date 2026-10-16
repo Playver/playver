@@ -478,6 +478,15 @@ export async function updateOrganizationDraft(
     const type = DRAFT_COLUMN_TYPES[key];
     if (!type) continue;
 
+    if (key === "name") {
+      const name = typeof value === "string" ? value.trim() : "";
+      if (!name) return { error: "Organization name is required" };
+      if (name.length > 200) return { error: "Organization name is too long" };
+      values.push(name);
+      setClauses.push(`"name" = $${values.length}`);
+      continue;
+    }
+
     if (key === "slug" && typeof value === "string") {
       resolvedSlug = await generateUniqueSlugExcluding(value, organization.id);
       values.push(resolvedSlug);
@@ -508,6 +517,32 @@ export async function updateOrganizationDraft(
   );
 
   return { slug: resolvedSlug };
+}
+
+// Rename an organization from its public page. Allowed for members of THAT
+// org with MANAGE_ORGANIZATION_PROFILE (checked against organizationId, not
+// the active-org cookie, since the public page may not be the active org)
+// and for site super admins, who have no membership. The slug is kept, so
+// existing links and shared URLs keep working after a rename.
+export async function renameOrganization(organizationId: string, rawName: string): Promise<{ error?: string }> {
+  const session = await requireSession();
+  const name = rawName.trim();
+  if (!name) return { error: "Organization name is required" };
+  if (name.length > 200) return { error: "Organization name is too long" };
+
+  const access = await pool.query(
+    `SELECT (SELECT role FROM "user" WHERE id = $1) AS "siteRole",
+            (SELECT role FROM "organization_membership"
+              WHERE "userId" = $1 AND "organizationId" = $2 AND status = 'active') AS "orgRole"`,
+    [session.user.id, organizationId]
+  );
+  const { siteRole, orgRole } = access.rows[0] ?? {};
+  const allowed = siteRole === "super_admin" || (orgRole && hasPermission(orgRole as OrgRole, "MANAGE_ORGANIZATION_PROFILE"));
+  if (!allowed) throw new ForbiddenError("Forbidden");
+
+  const result = await pool.query(`UPDATE "organization" SET name = $1, "updatedAt" = NOW() WHERE id = $2`, [name, organizationId]);
+  if (result.rowCount === 0) return { error: "Organization not found" };
+  return {};
 }
 
 // Replace-all semantics: the wizard's location editor always sends the full

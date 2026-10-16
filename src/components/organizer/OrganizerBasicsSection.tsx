@@ -1,15 +1,17 @@
 "use client";
 
-// Short description + sports covered — required fields in the old 10-step
-// wizard (Step2Identity) that the 4-step rebuild no longer collects up
-// front. Re-hosted here, independently saving, so they still have an
-// editable home instead of being permanently stuck at their draft defaults.
+// Organization name, short description + sports covered — the name is set
+// in the create wizard, the other two were required fields in the old
+// 10-step wizard (Step2Identity) that the 4-step rebuild no longer collects
+// up front. Re-hosted here, independently saving, so they all have an
+// editable home instead of being permanently stuck at their initial values.
 import { useTranslations } from "next-intl";
 import OrganizerEditableSection from "@/components/organizer/OrganizerEditableSection";
 import { updateOrganizationDraft } from "@/app/actions/organization";
 import { SPORTS_OPTIONS } from "@/components/organizer/create-wizard/types";
 
 type BasicsValue = {
+  name: string;
   shortDescription: string;
   sports: string[];
 };
@@ -29,14 +31,21 @@ export default function OrganizerBasicsSection(props: BasicsValue) {
     <OrganizerEditableSection<BasicsValue>
       title={t("profileBasicsTitle")}
       initialValue={props}
-      onSave={(v) =>
-        updateOrganizationDraft({
+      onSave={(v) => {
+        if (!v.name.trim()) return Promise.resolve({ error: t("wizardErrorName") });
+        return updateOrganizationDraft({
+          name: v.name,
           shortDescription: v.shortDescription,
           sports: v.sports,
-        })
-      }
-      renderView={(v) =>
-        v.shortDescription || v.sports.length > 0 ? (
+        });
+      }}
+      renderView={(v) => (
+        <div className="flex flex-col gap-3 text-sm">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{t("wizardOrgNameLabel")}</p>
+            <p className="font-bold text-zinc-900">{v.name}</p>
+          </div>
+          {v.shortDescription || v.sports.length > 0 ? (
           <div className="flex flex-col gap-3 text-sm">
             {v.shortDescription && <p className="text-zinc-600">{v.shortDescription}</p>}
             {v.sports.length > 0 && (
@@ -49,12 +58,23 @@ export default function OrganizerBasicsSection(props: BasicsValue) {
               </div>
             )}
           </div>
-        ) : (
-          <p className="text-sm text-zinc-400">{t("profileBasicsEmpty")}</p>
-        )
-      }
+          ) : (
+            <p className="text-sm text-zinc-400">{t("profileBasicsEmpty")}</p>
+          )}
+        </div>
+      )}
       renderEdit={(v, setV) => (
         <>
+          <div className="flex flex-col gap-1.5">
+            <label className={labelClass}>{t("wizardOrgNameLabel")}</label>
+            <input
+              value={v.name}
+              onChange={(e) => setV({ ...v, name: e.target.value })}
+              maxLength={200}
+              placeholder={t("wizardOrgNamePlaceholder")}
+              className={inputClass}
+            />
+          </div>
           <div className="flex flex-col gap-1.5">
             <label className={labelClass}>{t("wizardShortDescLabel")}</label>
             <textarea
