@@ -52,7 +52,7 @@ export default function FeedSidebar({
   createVariant = "chooser",
   showOrganizerLink = true,
 }: {
-  user: { name: string; email: string };
+  user: { name: string; email: string; image?: string | null };
   // Both omitted -> Home/Explore render as real links (to VIEW_HREF) instead
   // of calling onNavigate, and "active" is derived from the current
   // pathname. This lets the same sidebar be reused on pages that aren't
@@ -209,8 +209,12 @@ export default function FeedSidebar({
           onClick={onOpenProfile}
           className="w-full flex items-center gap-3 px-2 pb-3 text-left rounded-lg hover:bg-zinc-50 transition-colors"
         >
-          <span className="w-9 h-9 rounded-full bg-[#e21d12] flex items-center justify-center text-white text-sm font-bold shrink-0">
-            {initial}
+          <span className="w-9 h-9 rounded-full bg-[#e21d12] flex items-center justify-center text-white text-sm font-bold shrink-0 overflow-hidden">
+            {user.image ? (
+              <Image src={user.image} alt="" width={36} height={36} className="w-full h-full object-cover" />
+            ) : (
+              initial
+            )}
           </span>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-zinc-900 truncate">{user.name}</p>

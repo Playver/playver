@@ -24,10 +24,18 @@ export default function OrganizationNameEditor({
   const [value, setValue] = useState(name);
   const [error, setError] = useState("");
   const [saving, startSaving] = useTransition();
+  // Show the just-saved name right away instead of the old prop while
+  // router.refresh() re-renders the page; resync once the new prop arrives.
+  const [shown, setShown] = useState(name);
+  const [lastProp, setLastProp] = useState(name);
+  if (lastProp !== name) {
+    setLastProp(name);
+    setShown(name);
+  }
 
   const heading = (
     <h1 className="text-2xl font-extrabold text-zinc-900 break-words" style={{ fontFamily: "var(--font-playfair)" }}>
-      {name}
+      {shown}
     </h1>
   );
   if (!canEdit) return heading;
@@ -45,6 +53,7 @@ export default function OrganizationNameEditor({
           setError(res.error);
           return;
         }
+        setShown(value.trim());
         setEditing(false);
         router.refresh();
       } catch {
@@ -60,7 +69,7 @@ export default function OrganizationNameEditor({
         <button
           type="button"
           onClick={() => {
-            setValue(name);
+            setValue(shown);
             setEditing(true);
           }}
           aria-label={t("renameOrganization")}

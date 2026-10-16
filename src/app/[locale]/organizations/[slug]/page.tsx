@@ -28,6 +28,7 @@ import { shareMetadata } from "@/lib/share-metadata";
 import { getOrganizationShareInfo } from "@/lib/share-info";
 import OrganizationCoverEditor from "@/components/organizations/OrganizationCoverEditor";
 import OrganizationNameEditor from "@/components/organizations/OrganizationNameEditor";
+import OrganizationAboutEditor from "@/components/organizations/OrganizationAboutEditor";
 import { getUserRole } from "@/app/actions/admin";
 import { hasPermission } from "@/lib/organizer-permissions";
 import { getPublicOrganizationProfile, getUserOrganizations } from "@/app/actions/organization";
@@ -261,6 +262,9 @@ export default async function OrganizationPublicProfilePage({
   // server-side regardless, but showing the button to e.g. a STAFF/
   // READ_ONLY member would just be a button that silently fails.
   const canEditProfile = Boolean(viewerMembership && hasPermission(viewerMembership.role, "MANAGE_ORGANIZATION_PROFILE"));
+  // Name and About Us can also be edited by site super admins (see
+  // renameOrganization / updateOrganizationAbout).
+  const canEditPublicProfile = canEditProfile || viewerSiteRole === "super_admin";
 
   const now = new Date();
   const upcomingEvents = events.filter((e) => e.status === "active" && new Date(e.startDateTime) >= now);
@@ -378,10 +382,7 @@ export default async function OrganizationPublicProfilePage({
   const aboutContent = (
     <>
       <section>
-        <div className="bg-white rounded-2xl border border-zinc-200 p-8">
-          <h2 className="text-lg font-extrabold text-zinc-900 mb-3">{t("aboutUsTitle")}</h2>
-          <p className="text-sm text-zinc-600 leading-relaxed">{profile.mission || t("noMission")}</p>
-        </div>
+        <OrganizationAboutEditor organizationId={profile.id} mission={profile.mission} canEdit={canEditPublicProfile} />
       </section>
       <section>
         <div className="bg-white rounded-2xl border border-zinc-200 p-8">
@@ -485,7 +486,7 @@ export default async function OrganizationPublicProfilePage({
             <OrganizationNameEditor
               organizationId={profile.id}
               name={profile.name}
-              canEdit={canEditProfile || viewerSiteRole === "super_admin"}
+              canEdit={canEditPublicProfile}
             />
             {profile.slogan && <p className="text-sm font-semibold text-zinc-600 mt-0.5">{profile.slogan}</p>}
           </div>

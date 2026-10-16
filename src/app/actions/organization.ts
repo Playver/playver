@@ -519,17 +519,12 @@ export async function updateOrganizationDraft(
   return { slug: resolvedSlug };
 }
 
-// Rename an organization from its public page. Allowed for members of THAT
-// org with MANAGE_ORGANIZATION_PROFILE (checked against organizationId, not
-// the active-org cookie, since the public page may not be the active org)
-// and for site super admins, who have no membership. The slug is kept, so
-// existing links and shared URLs keep working after a rename.
-export async function renameOrganization(organizationId: string, rawName: string): Promise<{ error?: string }> {
+// Public-page edits (rename, About Us) are allowed for members of THAT org
+// with MANAGE_ORGANIZATION_PROFILE — checked against organizationId, not the
+// active-org cookie, since the public page may not be the active org — and
+// for site super admins, who have no membership.
+async function requireOrganizationEditor(organizationId: string): Promise<void> {
   const session = await requireSession();
-  const name = rawName.trim();
-  if (!name) return { error: "Organization name is required" };
-  if (name.length > 200) return { error: "Organization name is too long" };
-
   const access = await pool.query(
     `SELECT (SELECT role FROM "user" WHERE id = $1) AS "siteRole",
             (SELECT role FROM "organization_membership"
@@ -539,8 +534,31 @@ export async function renameOrganization(organizationId: string, rawName: string
   const { siteRole, orgRole } = access.rows[0] ?? {};
   const allowed = siteRole === "super_admin" || (orgRole && hasPermission(orgRole as OrgRole, "MANAGE_ORGANIZATION_PROFILE"));
   if (!allowed) throw new ForbiddenError("Forbidden");
+}
+
+// Rename an organization from its public page. The slug is kept, so existing
+// links and shared URLs keep working after a rename.
+export async function renameOrganization(organizationId: string, rawName: string): Promise<{ error?: string }> {
+  await requireOrganizationEditor(organizationId);
+  const name = rawName.trim();
+  if (!name) return { error: "Organization name is required" };
+  if (name.length > 200) return { error: "Organization name is too long" };
 
   const result = await pool.query(`UPDATE "organization" SET name = $1, "updatedAt" = NOW() WHERE id = $2`, [name, organizationId]);
+  if (result.rowCount === 0) return { error: "Organization not found" };
+  return {};
+}
+
+// "About Us" text (organization.mission) edited from the public page's About
+// tab — same text as the About section of /organizer/profile.
+export async function updateOrganizationAbout(organizationId: string, rawMission: string): Promise<{ error?: string }> {
+  await requireOrganizationEditor(organizationId);
+  const mission = rawMission.trim();
+  if (mission.length > 5000) return { error: "About text is too long" };
+  const result = await pool.query(`UPDATE "organization" SET mission = $1, "updatedAt" = NOW() WHERE id = $2`, [
+    mission || null,
+    organizationId,
+  ]);
   if (result.rowCount === 0) return { error: "Organization not found" };
   return {};
 }
