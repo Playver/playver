@@ -266,7 +266,6 @@ export default async function OrganizationPublicProfilePage({
   const upcomingEvents = events.filter((e) => e.status === "active" && new Date(e.startDateTime) >= now);
   const previewEvents = upcomingEvents.slice(0, 4);
 
-  const accentColor = profile.brandColor || "#e21d12";
   const locationLabel = [profile.city, profile.province].filter(Boolean).join(", ");
   const orgTypeLabel =
     profile.organizationType && ORG_TYPE_KEYS.includes(profile.organizationType)
@@ -501,8 +500,7 @@ export default async function OrganizationPublicProfilePage({
           {profile.publicEmail && (
             <a
               href={`mailto:${profile.publicEmail}`}
-              className="shrink-0 rounded-full px-5 py-2.5 text-sm font-bold text-white transition-colors hover:opacity-90"
-              style={{ backgroundColor: accentColor }}
+              className="shrink-0 rounded-full bg-[#e21d12] px-5 py-2.5 text-sm font-bold text-white transition-colors hover:opacity-90"
             >
               {t("contactButton")}
             </a>

@@ -44,7 +44,7 @@ export default async function OrganizerProfilePage() {
 
       <OrganizerBasicsSection name={profile.name} shortDescription={profile.shortDescription ?? ""} sports={profile.sports} />
 
-      <OrganizerBrandingSection coverImageUrl={profile.coverImageUrl} brandColor={profile.brandColor ?? "#22c55e"} />
+      <OrganizerBrandingSection coverImageUrl={profile.coverImageUrl} />
 
       <OrganizerAboutSection
         mission={profile.mission ?? ""}

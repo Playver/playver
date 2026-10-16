@@ -1,30 +1,23 @@
 "use client";
 
-// Cover image + brand color — the part of the old wizard's Step3Branding
-// that didn't move into the wizard's new Step1Profile (the profile-picture
-// half did). Both fields persist immediately on change, matching Stage B's
-// established upload-persistence convention (see AthleteAvatarEditor.tsx)
-// rather than going through a pencil/Save/Cancel cycle — there's no "typed"
-// value here to cancel out of.
+// Cover image — the part of the old wizard's Step3Branding that didn't move
+// into the wizard's new Step1Profile (the profile-picture half did). Brand
+// color was removed; public org pages use Playver's own red. The cover
+// persists immediately on upload, matching Stage B's established
+// upload-persistence convention (see AthleteAvatarEditor.tsx) rather than
+// going through a pencil/Save/Cancel cycle — there's no "typed" value here
+// to cancel out of.
 import { useRef, useState, useTransition } from "react";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/routing";
 import { useUploadThing } from "@/lib/uploadthing";
 import { updateOrganizationDraft } from "@/app/actions/organization";
-import { BRAND_COLOR_OPTIONS } from "@/components/organizer/create-wizard/types";
 
-export default function OrganizerBrandingSection({
-  coverImageUrl,
-  brandColor,
-}: {
-  coverImageUrl: string | null;
-  brandColor: string;
-}) {
+export default function OrganizerBrandingSection({ coverImageUrl }: { coverImageUrl: string | null }) {
   const t = useTranslations("Organizer");
   const router = useRouter();
   const [cover, setCover] = useState(coverImageUrl);
-  const [color, setColor] = useState(brandColor);
   const [uploading, setUploading] = useState(false);
   const [, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -43,14 +36,6 @@ export default function OrganizerBrandingSection({
     },
     onUploadError: () => setUploading(false),
   });
-
-  function handlePickColor(next: string) {
-    setColor(next);
-    startTransition(async () => {
-      await updateOrganizationDraft({ brandColor: next });
-      router.refresh();
-    });
-  }
 
   return (
     <section className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-6">
@@ -88,22 +73,6 @@ export default function OrganizerBrandingSection({
               e.target.value = "";
             }}
           />
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <label className="text-sm font-semibold text-zinc-700">{t("wizardBrandColorLabel")}</label>
-          <div className="flex items-center gap-2.5">
-            {BRAND_COLOR_OPTIONS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => handlePickColor(c)}
-                style={{ backgroundColor: c }}
-                className={`size-8 rounded-full transition-transform ${color === c ? "ring-2 ring-offset-2 ring-zinc-400 scale-105" : ""}`}
-                aria-label={c}
-              />
-            ))}
-          </div>
         </div>
       </div>
     </section>

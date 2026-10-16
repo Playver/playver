@@ -237,4 +237,3 @@ export const LANGUAGE_OPTIONS = ["English", "French", "Spanish", "Other"];
 export const ORG_STATUS_OPTIONS = [
   "Non-profit", "For-profit", "Registered Charity", "Educational Institution", "Government", "Unregistered",
 ];
-export const BRAND_COLOR_OPTIONS = ["#22c55e", "#3b82f6", "#a855f7", "#f97316", "#ef4444", "#0f172a"];
